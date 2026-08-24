@@ -1,0 +1,16 @@
+# MVTD dataset config (brief P2; spec §4). Public dataset:
+# arXiv 2506.02866, HF: AhsanBB/Maritime_Visual_Tracking_Dataset_MVTD
+# (182 sequences, GOT-10k layout, Boat/Ship/SailBoat/USV).
+dataset: mvtd
+root: data/raw/mvtd
+manifest_path: data/manifests/mvtd.jsonl
+frames_per_tracklet: 16
+sample_mode: uniform
+input_resolution: 224
+short_tracklet_policy: repeat_last
+long_tracklet_policy: uniform_subsample
+
+layout:
+  split_dirs: [train, test]
+  frame_extensions: [.jpg, .jpeg, .png]
+  fps: 30

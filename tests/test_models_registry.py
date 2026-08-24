@@ -7,19 +7,20 @@ from data.gap_trials import GapTrial
 
 
 def test_encoder_registry_has_arms():
-    assert encoder_registry.names() == ["cnn_reid", "openvla_vision", "vjepa_encoder", "vjepa_predictor"]
+    assert encoder_registry.names() == [
+        "cnn_reid",
+        "dinov2",
+        "openvla_vision",
+        "siglip",
+        "vjepa_encoder",
+        "vjepa_predictor",
+    ]
 
 
 def test_encoder_registry_create():
-    enc = encoder_registry.create("cnn_reid", backbone="osnet_x1_0")
-    assert enc.name == "cnn_reid_osnet_x1_0"
+    enc = encoder_registry.create("cnn_reid", backbone="resnet50", pretrained=False)
+    assert enc.name == "cnn_reid_resnet50"
     assert enc.embedding_dim == 2048
-
-
-def test_cnn_encode_fails_loudly():
-    enc = encoder_registry.create("cnn_reid")
-    with pytest.raises(NotImplementedError):
-        enc.encode_observed(None, None)  # type: ignore[arg-type]
 
 
 def test_predictor_arm_is_not_silent():

@@ -57,3 +57,35 @@ def test_roundtrip(tmp_path):
 def test_from_dict_ignores_unknown_keys():
     m = TrackletManifest.from_dict({**make().to_dict(), "extra": 1})
     assert m.tracklet_id == "t1"
+
+
+def test_per_frame_fields_ok():
+    m = make(
+        fps=25.0,
+        video_path="v.mp4",
+        frame_indices=[0, 1],
+        frame_timestamps_utc_ms=[0, 40],
+        frame_bboxes=[[1, 2, 3, 4], None],
+    )
+    m.validate()
+
+
+def test_per_frame_length_mismatch_raises():
+    with pytest.raises(ValueError):
+        make(frame_indices=[0]).validate()
+    with pytest.raises(ValueError):
+        make(frame_timestamps_utc_ms=[0]).validate()
+    with pytest.raises(ValueError):
+        make(frame_bboxes=[[1, 2, 3, 4]]).validate()
+
+
+def test_bad_bbox_raises():
+    with pytest.raises(ValueError):
+        make(frame_bboxes=[[1, 2, 3]]).validate()
+    with pytest.raises(ValueError):
+        make(frame_bboxes=[[1, 2, 3, -1]]).validate()
+
+
+def test_bad_fps_raises():
+    with pytest.raises(ValueError):
+        make(fps=0.0).validate()

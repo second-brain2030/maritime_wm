@@ -1,0 +1,25 @@
+# FVessel dataset config (brief P1; spec §4). Public dataset:
+# github.com/gy65896/FVessel, HF: gy65896/FVessel (26 video+AIS sequences).
+dataset: fvessel
+root: data/raw/fvessel
+manifest_path: data/manifests/fvessel.jsonl
+aux_manifest_paths:
+  ais: data/manifests/fvessel_ais.jsonl
+  meta: data/manifests/fvessel_meta.jsonl
+frames_per_tracklet: 16
+sample_mode: uniform
+input_resolution: 224
+short_tracklet_policy: repeat_last
+long_tracklet_policy: uniform_subsample
+
+layout:
+  sequences_dir: "01_Video+AIS"
+  ais_dir: ais
+  gt_dir: gt
+  tracking_gt_suffix: _gt_tracking.txt
+  fusion_gt_suffix: _gt_fusion.txt
+  camera_para_file: camera_para.txt
+  video_extensions: [.mp4]
+  fps: 25
+  split_seed: 42
+  split_ratios: {train: 0.6, query: 0.2, gallery: 0.2}

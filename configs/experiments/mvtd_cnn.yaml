@@ -1,0 +1,14 @@
+extends: _base
+experiment:
+  name: mvtd_cnn
+data:
+  dataset: mvtd
+  manifest_path: data/manifests/mvtd.jsonl
+  frames_per_tracklet: 16
+  sample_mode: uniform
+model:
+  arm: cnn_reid
+  backbone: resnet50
+  pretrained: false
+  frozen_backbone: true
+  temporal_head: attention

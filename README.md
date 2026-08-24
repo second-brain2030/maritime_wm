@@ -113,13 +113,25 @@ Every run writes `resolved_config.yaml`, `git_state.json`,
 
 ## Status
 
-Implemented (tested): manifests and validation, split hygiene, temporal
-sampling, DGRA trial construction and binning, distractor-pool schema,
-shared Re-ID head, ID cross-entropy and batch-hard triplet losses,
-CMC/mAP metrics, paired bootstrap, degradation curves/slopes, registry,
-config composition, CLI shells, and the **ViV-ReID dataset adapter**
-(config-driven layout mapping, identity/camera parsing, split validation).
+Implemented (tested, 149 passing):
 
-Stubs (fail loudly, land in later commits): VesselReID adapter, V-JEPA /
-OpenVLA / CNN encoders, predictor future-latency, tracker and AIS baselines,
-trainer, robustness/report generation.
+- **Data**: manifests + per-frame bboxes/timestamps, split hygiene, temporal
+  sampling, DGRA gap trials, distractor pools, AIS ping/trajectory manifests,
+  intermittent-observation sampler (frame-skipping + block patch masks).
+- **Adapters**: ViV-ReID (config-driven layout), **FVessel** (video+AIS+GT,
+  camera meta, MMSI mapping via fusion IoU), **MVTD** (GOT-10k, absence/cover
+  labels -> occlusion/truncation).
+- **Harness**: sensor-blackout episodes (10/30/60/120s), AIS withholding with
+  jitter/dropout, co-present distractor pools, reappearance ground truth.
+- **Metrics**: re-acquisition Top-1/Top-5, IDSW, IDF1, HOTA, Haversine/pixel
+  drift, paired bootstrap, degradation curves/slopes (arbitrary gap bins).
+- **Arms**: real frozen encoders — CNN resnet50 (Arm A), DINOv2 + SigLIP via
+  HF transformers (Arm B), V-JEPA (Arm C, `blocked_by_api` until the official
+  package is pinned), Arm D kinematic layer (constant-velocity Kalman +
+  predictive search-window proposal).
+- **Pipeline**: `extract_features.py` runs end-to-end with content-addressed
+  feature caching; shared Re-ID head, ID CE + batch-hard triplet losses.
+
+Stubs (fail loudly, land in later commits): VesselReID adapter, OpenVLA live
+feature extraction, V-JEPA predictor future-latency, ByteTrack/BoT-SORT and
+AIS-upper-bound baselines, probe trainer, stress-suite and report runs.

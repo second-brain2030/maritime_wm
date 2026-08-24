@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
-SPLITS = ("train", "query", "gallery")
+SPLITS = ("train", "query", "gallery", "test")  # "test" used by MVTD's official split
 OCCLUSION_LEVELS = ("none", "partial", "severe", "unknown")
 TRUNCATION_LEVELS = ("none", "partial", "severe", "unknown")
 KNOWN_SOURCES = ("viv_reid", "vesselreid", "mvtd", "fvessel", "custom")
@@ -35,6 +35,12 @@ class TrackletManifest:
     truncation_level: str = "unknown"
     quality_score: float | None = None
     source_dataset: str = "custom"
+    # --- optional media / per-frame extensions (FVessel, MVTD; spec §4) ---
+    fps: float | None = None
+    video_path: str | None = None            # media file when frames come from video
+    frame_indices: list[int] | None = None   # indices into the video (or None for image lists)
+    frame_timestamps_utc_ms: list[int] | None = None  # aligned to frame_paths
+    frame_bboxes: list[list[float] | None] | None = None  # [x, y, w, h] per frame, None = not visible
 
     def validate(self) -> None:
         errors: list[str] = []
@@ -60,6 +66,20 @@ class TrackletManifest:
             errors.append(f"quality_score {self.quality_score!r} outside [0, 1]")
         if self.source_dataset not in KNOWN_SOURCES:
             errors.append(f"source_dataset {self.source_dataset!r} not in {KNOWN_SOURCES}")
+        if self.fps is not None and self.fps <= 0:
+            errors.append(f"fps must be > 0, got {self.fps}")
+        n = len(self.frame_paths)
+        if self.frame_indices is not None and len(self.frame_indices) != n:
+            errors.append("frame_indices length != frame_paths length")
+        if self.frame_timestamps_utc_ms is not None and len(self.frame_timestamps_utc_ms) != n:
+            errors.append("frame_timestamps_utc_ms length != frame_paths length")
+        if self.frame_bboxes is not None:
+            if len(self.frame_bboxes) != n:
+                errors.append("frame_bboxes length != frame_paths length")
+            else:
+                for i, bb in enumerate(self.frame_bboxes):
+                    if bb is not None and (len(bb) != 4 or any(v < 0 for v in bb)):
+                        errors.append(f"frame_bboxes[{i}] must be [x, y, w, h] >= 0 or null")
         if errors:
             raise ValueError(f"TrackletManifest {self.tracklet_id!r}: " + "; ".join(errors))
 

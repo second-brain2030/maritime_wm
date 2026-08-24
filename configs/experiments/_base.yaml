@@ -20,3 +20,10 @@ evaluation:
 stress:
   enabled: true
   suites: [block_occlusion, frame_dropout, haze, time_gap, disappearance_gap]
+
+features_dir: outputs/features
+blackout:
+  durations_s: [10, 30, 60, 120]
+  pool_size: 5
+  jitter_ms: 0
+  ais_dropout_p: 0.0

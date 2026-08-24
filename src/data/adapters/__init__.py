@@ -5,9 +5,13 @@ from utils.registry import Registry
 
 from .base import DatasetAdapter
 from .viv_reid import ViVReidAdapter
+from .fvessel import FvesselAdapter
+from .mvtd import MvtdAdapter
 
 adapter_registry = Registry("dataset_adapters")
 adapter_registry.register("viv_reid", ViVReidAdapter)
+adapter_registry.register("fvessel", FvesselAdapter)
+adapter_registry.register("mvtd", MvtdAdapter)
 
 
 def get_adapter(name: str, config: dict):

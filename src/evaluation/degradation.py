@@ -1,34 +1,47 @@
-"""Gap-degradation curves and slopes (spec section 9 [HARD TEST]).
+"""Gap-degradation curves and slopes (spec section 9 [HARD TEST]; brief P4).
 
 The headline signal is the DEGRADATION CURVE: accuracy vs gap-duration bin,
-one curve per arm, plus the linear-fit slope of chance-normalized accuracy vs
-log gap. Flatter slope = more robust; the "advantage widens with gap" gate
-compares slopes across arms (spec sections 8.5, 9).
+one curve per arm, plus the linear-fit slope of accuracy vs log gap. Flatter
+slope = more robust; the "advantage widens with gap" gate compares slopes
+across arms (spec sections 8.5, 9).
+
+Bins are either the DGRA names (short/medium/long, default centers in seconds)
+or arbitrary blackout durations keyed by their bin_centers (brief P4: 10s/30s/
+60s/120s blackouts).
 """
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+import math
+from typing import Mapping
 
 import numpy as np
 
 BIN_ORDER = {"short": 0, "medium": 1, "long": 2}
-# Representative gap durations for log-gap x-axis (seconds), matching the
-# default bins in configs/gap/viv_reid_dgra.yaml.
+# Representative gap durations for the default DGRA bins (seconds).
 BIN_CENTER_SECONDS = {"short": 20.0, "medium": 90.0, "long": 600.0}
 
 
-def degradation_curve(accs: Mapping[str, float]) -> list[tuple[str, float]]:
-    """Sort per-bin accuracies short -> medium -> long (unknown bins dropped)."""
-    known = [(name, accs[name]) for name in BIN_ORDER if name in accs]
-    return sorted(known, key=lambda kv: BIN_ORDER[kv[0]])
+def _sorted_bins(accs: Mapping[str, float], bin_centers: Mapping[str, float] | None):
+    if bin_centers is None:
+        return [(name, accs[name]) for name in BIN_ORDER if name in accs]
+    return sorted(accs.items(), key=lambda kv: bin_centers[kv[0]])
 
 
-def degradation_slope(accs: Mapping[str, float], bin_centers: Mapping[str, float] | None = None) -> float:
+def degradation_curve(
+    accs: Mapping[str, float], bin_centers: Mapping[str, float] | None = None
+) -> list[tuple[str, float]]:
+    """Per-bin accuracies ordered by gap duration (short -> long)."""
+    return _sorted_bins(accs, bin_centers)
+
+
+def degradation_slope(
+    accs: Mapping[str, float], bin_centers: Mapping[str, float] | None = None
+) -> float:
     """Linear-fit slope of accuracy vs log gap; requires >= 2 bins."""
-    centers = bin_centers or BIN_CENTER_SECONDS
-    curve = degradation_curve(accs)
+    curve = _sorted_bins(accs, bin_centers)
     if len(curve) < 2:
         raise ValueError("degradation_slope requires at least 2 gap bins")
+    centers = bin_centers or BIN_CENTER_SECONDS
     x = np.log([centers[name] for name, _ in curve])
     y = np.array([acc for _, acc in curve], dtype=float)
     return float(np.polyfit(x, y, 1)[0])

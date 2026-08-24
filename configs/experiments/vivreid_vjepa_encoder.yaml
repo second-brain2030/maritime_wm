@@ -1,0 +1,10 @@
+extends: _base
+experiment:
+  name: vivreid_vjepa_encoder
+data:
+  dataset: viv_reid
+  manifest_path: data/manifests/viv_reid.jsonl
+model:
+  arm: vjepa_encoder
+  frozen_backbone: true
+  temporal_head: attention

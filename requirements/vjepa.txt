@@ -1,0 +1,6 @@
+# V-JEPA arms (spec §13): prefer Hugging Face Transformers for encoder-only
+# feature extraction; the official V-JEPA repo is used for predictor features.
+# Pin exact checkpoint ids and versions in configs/models/*.yaml and record
+# them in experiment metadata.
+transformers>=4.40
+timm>=0.9

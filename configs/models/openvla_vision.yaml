@@ -1,0 +1,8 @@
+# Arm D: VLA-derived vision representation (spec §6.D, §14).
+# feature_source must be one of:
+#   openvla_direct_fused | prismatic_dinosiglip | fallback_dinov2_plus_siglip
+arm: openvla_vision
+checkpoint: openvla-7b        # PIN exact checkpoint and commit hash (spec §14)
+feature_source: prismatic_dinosiglip
+frozen: true
+embedding_dim: 1792           # 1024 (DINOv2) + 768 (SigLIP), verify per checkpoint

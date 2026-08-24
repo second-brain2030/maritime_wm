@@ -1,0 +1,22 @@
+# Shared experiment defaults (spec §11 example config). Experiment configs
+# extend this file; resolved configs are dumped to every output dir.
+experiment:
+  name: _base
+  seed: 42
+
+training:
+  epochs: 60
+  batch_size: 32
+  optimizer: adamw
+  lr: 0.0003
+  losses:
+    id_ce_weight: 1.0
+    triplet_weight: 1.0
+
+evaluation:
+  metrics: [map, rank1, rank5, rank10, minp]
+  bootstrap_samples: 2000
+
+stress:
+  enabled: true
+  suites: [block_occlusion, frame_dropout, haze, time_gap, disappearance_gap]

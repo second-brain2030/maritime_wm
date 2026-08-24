@@ -1,0 +1,9 @@
+# VLA arm (spec §14). OpenVLA install is heavy and commit-sensitive; the
+# recommended path is to extract fused DINOv2+SigLIP vision features once in a
+# separate container/job and feed a cached .pt feature store into this repo.
+# Install here only if you need live OpenVLA feature extraction.
+#
+#   pip install git+https://github.com/openvla/openvla.git@<pinned-commit>
+#
+# Fallback (lighter): DINOv2 + SigLIP components separately, concatenated.
+#   pip install torch torchvision transformers timm

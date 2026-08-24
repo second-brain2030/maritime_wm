@@ -1,0 +1,9 @@
+# VesselReID dataset config (spec §4.2) - image-level transfer/ablation only.
+dataset: vesselreid
+root: data/raw/vesselreid
+manifest_path: data/manifests/vesselreid.jsonl
+frames_per_tracklet: 1
+sample_mode: uniform
+input_resolution: 224
+short_tracklet_policy: repeat_last
+long_tracklet_policy: uniform_subsample

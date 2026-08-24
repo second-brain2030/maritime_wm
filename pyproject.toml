@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maritime-reid-worldmodel"
+version = "0.1.0"
+description = "Maritime vessel Re-ID experiment: JEPA predictive representations vs CNN and VLA-derived vision, with a disappearance-gap hard test"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "maritime_wm contributors" }]
+dependencies = [
+  "torch>=2.0",
+  "torchvision>=0.15",
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "pandas>=2.0",
+  "pyarrow>=14",
+  "scikit-learn>=1.3",
+  "matplotlib>=3.7",
+  "tqdm>=4.66",
+  "PyYAML>=6.0",
+  "hydra-core>=1.3",
+  "omegaconf>=2.3",
+  "pytest>=8",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = [
+  "data",
+  "data.adapters",
+  "models",
+  "models.baselines",
+  "training",
+  "evaluation",
+  "utils",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

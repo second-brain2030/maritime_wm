@@ -1,0 +1,21 @@
+# Disappearance-gap re-acquisition (DGRA) protocol (spec §7.1, §4.4).
+# gap bins: seconds are used when timestamps exist; frame-count bins are the
+# fallback when they do not. Record gap_duration_source in every trial.
+gap_protocol:
+  enabled: true
+  gap_bins_seconds:
+    short: [10, 30]
+    medium: [60, 120]
+    long: [300, null]
+  gap_bins_frames:
+    short: [25, 90]
+    medium: [150, 360]
+    long: [900, null]
+  pool_sizes: [5, 10, 20]
+  min_pool_similarity: high
+  maneuver_slices: [straight, maneuver, unknown]
+  ais_modes: [withheld, available]
+  synthetic_gap_holdout: 0.5
+  predictor_horizon_delta: 60
+  nominal_fps: 25
+  seed: 42

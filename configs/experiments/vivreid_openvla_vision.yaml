@@ -1,0 +1,10 @@
+extends: _base
+experiment:
+  name: vivreid_openvla_vision
+data:
+  dataset: viv_reid
+  manifest_path: data/manifests/viv_reid.jsonl
+model:
+  arm: openvla_vision
+  frozen_backbone: true
+  temporal_head: attention

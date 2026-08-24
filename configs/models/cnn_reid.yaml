@@ -1,0 +1,6 @@
+# Arm A: conventional Re-ID backbone (spec §6.A). ImageNet pretrained
+# permitted; record source/version in experiment metadata.
+arm: cnn_reid
+backbone: resnet50_ibn_a   # or osnet_x1_0
+pretrained: true
+embedding_dim: 2048

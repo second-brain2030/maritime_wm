@@ -1,0 +1,14 @@
+# Core requirements (spec: reproduce one baseline run)
+torch>=2.0
+torchvision>=0.15
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+pyarrow>=14
+scikit-learn>=1.3
+matplotlib>=3.7
+tqdm>=4.66
+PyYAML>=6.0
+hydra-core>=1.3
+omegaconf>=2.3
+pytest>=8

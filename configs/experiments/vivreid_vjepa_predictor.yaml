@@ -1,0 +1,12 @@
+extends: _base
+experiment:
+  name: vivreid_vjepa_predictor
+data:
+  dataset: viv_reid
+  manifest_path: data/manifests/viv_reid.jsonl
+model:
+  arm: vjepa_predictor
+  frozen_backbone: true
+  temporal_head: attention
+gap_protocol:
+  predictor_horizon_delta: 60

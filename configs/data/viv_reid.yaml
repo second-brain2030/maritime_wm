@@ -1,0 +1,10 @@
+# ViV-ReID dataset config (spec §4.1). Map exact upstream folder names via
+# this config rather than hard-coding them in the adapter.
+dataset: viv_reid
+root: data/raw/viv-reid
+manifest_path: data/manifests/viv_reid.jsonl
+frames_per_tracklet: 16
+sample_mode: uniform
+input_resolution: 224
+short_tracklet_policy: repeat_last
+long_tracklet_policy: uniform_subsample

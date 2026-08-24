@@ -1,0 +1,8 @@
+# Arm C: frozen V-JEPA encoder + predictor probe (spec §6.C, §13).
+# predictor_horizon_delta: seconds Arm C predicts past the disappearance point
+# in the gap-conditioned usage (spec §6.C [HARD TEST]).
+arm: vjepa_predictor
+checkpoint: facebook/vjepa2-<pin-exact-id>
+frozen: true
+embedding_dim: 768
+predictor_horizon_delta: 60

@@ -1,0 +1,17 @@
+# Windows NTFS alternate data streams (WSL copies)
+*:Zone.Identifier
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Experiment outputs (regenerate-able artifacts)
+outputs/*
+!outputs/.gitkeep
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

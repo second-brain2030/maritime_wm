@@ -1,5 +1,6 @@
-# ViV-ReID dataset config (spec §4.1). Map exact upstream folder names via
-# this config rather than hard-coding them in the adapter.
+# ViV-ReID dataset config (spec §4.1).
+# Layout is config-driven: map the EXACT upstream folder names and identity
+# parse pattern here, never in code (spec §4.1).
 dataset: viv_reid
 root: data/raw/viv-reid
 manifest_path: data/manifests/viv_reid.jsonl
@@ -8,3 +9,13 @@ sample_mode: uniform
 input_resolution: 224
 short_tracklet_policy: repeat_last
 long_tracklet_policy: uniform_subsample
+
+layout:
+  train_dir: train
+  query_dir: query
+  gallery_dir: gallery
+  # One directory per tracklet; parse vessel identity from the folder name.
+  # Example folder: v0123_cam5_track2  ->  vessel_id=v0123, camera_id=5
+  tracklet_identity_pattern: "^(?P<vessel_id>v?\\d+)_.*$"
+  camera_pattern: "(?:cam|camera)[-_]?(?P<camera_id>\\d+)"
+  frame_extensions: [.jpg, .jpeg, .png, .bmp]

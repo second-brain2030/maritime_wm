@@ -117,8 +117,9 @@ Implemented (tested): manifests and validation, split hygiene, temporal
 sampling, DGRA trial construction and binning, distractor-pool schema,
 shared Re-ID head, ID cross-entropy and batch-hard triplet losses,
 CMC/mAP metrics, paired bootstrap, degradation curves/slopes, registry,
-config composition, CLI shells.
+config composition, CLI shells, and the **ViV-ReID dataset adapter**
+(config-driven layout mapping, identity/camera parsing, split validation).
 
-Stubs (fail loudly, land in later commits): dataset adapters, V-JEPA /
+Stubs (fail loudly, land in later commits): VesselReID adapter, V-JEPA /
 OpenVLA / CNN encoders, predictor future-latency, tracker and AIS baselines,
 trainer, robustness/report generation.

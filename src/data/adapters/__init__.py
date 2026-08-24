@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from utils.registry import Registry
 
+from .base import DatasetAdapter
+from .viv_reid import ViVReidAdapter
+
 adapter_registry = Registry("dataset_adapters")
+adapter_registry.register("viv_reid", ViVReidAdapter)
 
 
 def get_adapter(name: str, config: dict):

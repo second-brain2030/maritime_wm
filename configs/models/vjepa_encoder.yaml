@@ -1,6 +1,7 @@
-# Arm B: frozen V-JEPA 2.1 encoder-only probe (spec §6.B, §13).
-# PIN the exact Hugging Face checkpoint id and package versions.
+# Arm C: frozen V-JEPA 2.1 encoder probe (spec §6.B/C, §13).
+# PIN the exact hub checkpoint id (repo:hub-model); first use downloads weights.
 arm: vjepa_encoder
-checkpoint: facebook/vjepa2-<pin-exact-id>
+checkpoint: "facebookresearch/vjepa2:vjepa2_1_vit_base_384"
 frozen: true
 embedding_dim: 768
+input_size: 384

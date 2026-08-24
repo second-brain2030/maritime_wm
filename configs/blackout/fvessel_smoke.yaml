@@ -1,0 +1,15 @@
+# Short blackout config for smoke tests on synthetic FVessel data.
+blackout:
+  durations_s: [2, 4]
+  min_visible_before_s: 2.0
+  min_visible_after_s: 1.0
+  withhold_ais: true
+  jitter_ms: 100
+  ais_dropout_p: 0.1
+  pool_size: 5
+  episodes_per_duration_per_tracklet: 1
+  seed: 42
+
+manifest_path: data/manifests/fvessel.jsonl
+ais_manifest_path: data/manifests/fvessel_ais.jsonl
+episodes_path: data/gap_trials/fvessel_smoke_blackout.jsonl

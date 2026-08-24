@@ -45,10 +45,23 @@ def test_siglip_constructor_no_download():
     assert enc.embedding_dim == 768
 
 
-def test_vjepa_blocked_by_api():
+def test_vjepa_constructor_validation():
+    with pytest.raises(ValueError):
+        encoder_registry.create("vjepa_encoder", checkpoint="no-colon-format")
+    with pytest.raises(ValueError):
+        encoder_registry.create("vjepa_encoder", checkpoint="repo:nonexistent_model")
+    enc = encoder_registry.create("vjepa_encoder")
+    assert enc.name == "vjepa_encoder_vjepa2_1_vit_base_384"
+    assert enc.checkpoint == "facebookresearch/vjepa2:vjepa2_1_vit_base_384"
+
+
+def test_vjepa_predictor_blocked_by_api():
+    # encode_predicted/predict_future fail before any weight download
     enc = encoder_registry.create("vjepa_encoder")
     with pytest.raises(NotImplementedError):
-        enc.encode_observed(torch.rand(1, 2, 3, 64, 64), None)
+        enc.encode_predicted(torch.rand(1, 2, 3, 64, 64), None)
+    with pytest.raises(NotImplementedError):
+        enc.predict_future(torch.rand(1, 2, 3, 64), 10)
 
 
 def test_openvla_feature_source_validated():

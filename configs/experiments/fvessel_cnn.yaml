@@ -1,0 +1,17 @@
+extends: _base
+experiment:
+  name: fvessel_cnn
+data:
+  dataset: fvessel
+  manifest_path: data/manifests/fvessel.jsonl
+  frames_per_tracklet: 16
+  sample_mode: uniform
+ais_manifest_path: data/manifests/fvessel_ais.jsonl
+episodes_path: data/gap_trials/fvessel_blackout.jsonl
+model:
+  arm: cnn_reid
+  backbone: resnet50
+  pretrained: false
+  frozen_backbone: true
+  temporal_head: attention
+  embedding_dim: 2048

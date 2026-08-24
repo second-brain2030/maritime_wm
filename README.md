@@ -69,21 +69,35 @@ Produces `data/gap_trials/viv_reid_dgra.jsonl` — deterministic
 query→gallery re-acquisition trials across short/medium/long gaps, with
 distractor pools, maneuver labels, and AIS-withheld subsets.
 
-## Standard run sequence (spec §21)
+## Standard run sequence (spec §21; pilot)
 
 ```bash
+# 1. ingest raw datasets -> normalized manifests (+ AIS/camera aux)
 python scripts/prepare_dataset.py --config-name viv_reid
+python scripts/prepare_dataset.py --config-name fvessel
+python scripts/prepare_dataset.py --config-name mvtd
+
+# 2. build DGRA gap trials (ViV-ReID) or sensor-blackout episodes (FVessel)
 python scripts/build_gap_trials.py --config-name viv_reid_dgra
-python scripts/extract_features.py --config-name vivreid_cnn
-python scripts/extract_features.py --config-name vivreid_vjepa_encoder
-python scripts/extract_features.py --config-name vivreid_openvla_vision
-python scripts/train_probe.py --config-name vivreid_cnn
-python scripts/train_probe.py --config-name vivreid_vjepa_encoder
-python scripts/train_probe.py --config-name vivreid_openvla_vision
-python scripts/run_baselines.py --config-name vivreid_vjepa_encoder   # Arms F, G, H
-python scripts/evaluate.py --config-name vivreid_vjepa_encoder
-python scripts/run_stress_suite.py --config-name vivreid_all_arms
-python scripts/aggregate_results.py --runs outputs/vivreid_*
+python scripts/build_blackout_episodes.py --config-name fvessel_blackout
+
+# 3. extract frozen-backbone features (content-addressed cache)
+python scripts/extract_features.py --config-name fvessel_cnn
+
+# 4. train the shared Re-ID probe on cached features
+python scripts/train_probe.py --config-name fvessel_cnn
+
+# 5. evaluate the probe arm on blackout episodes (re-acquisition + drift)
+python scripts/evaluate.py --config-name fvessel_cnn \
+    --episodes data/gap_trials/fvessel_blackout.jsonl
+
+# 6. external baselines on the SAME episodes (identical result format)
+python scripts/run_baselines.py --baseline kalman_deadreckon --config-name fvessel_cnn
+python scripts/run_baselines.py --baseline tracker_reid --config-name fvessel_cnn
+python scripts/run_baselines.py --baseline ais_upper_bound --config-name fvessel_cnn
+
+# 7. aggregate runs into a comparison report
+python scripts/aggregate_results.py --runs outputs/eval/cnn_reid outputs/baselines/*
 ```
 
 ## How to add a new encoder adapter
@@ -113,7 +127,7 @@ Every run writes `resolved_config.yaml`, `git_state.json`,
 
 ## Status
 
-Implemented (tested, 149 passing):
+Implemented (tested, 159 passing):
 
 - **Data**: manifests + per-frame bboxes/timestamps, split hygiene, temporal
   sampling, DGRA gap trials, distractor pools, AIS ping/trajectory manifests,
@@ -126,12 +140,16 @@ Implemented (tested, 149 passing):
 - **Metrics**: re-acquisition Top-1/Top-5, IDSW, IDF1, HOTA, Haversine/pixel
   drift, paired bootstrap, degradation curves/slopes (arbitrary gap bins).
 - **Arms**: real frozen encoders — CNN resnet50 (Arm A), DINOv2 + SigLIP via
-  HF transformers (Arm B), V-JEPA (Arm C, `blocked_by_api` until the official
-  package is pinned), Arm D kinematic layer (constant-velocity Kalman +
-  predictive search-window proposal).
-- **Pipeline**: `extract_features.py` runs end-to-end with content-addressed
-  feature caching; shared Re-ID head, ID CE + batch-hard triplet losses.
+  HF transformers (Arm B), **V-JEPA 2.1 via torch.hub** (Arm C; weights
+  download on first use, predictor blocked_by_api), Arm D kinematic layer
+  (constant-velocity Kalman + predictive search-window proposal).
+- **Pipeline (runs end-to-end, verified on synthetic FVessel with real
+  videos)**: feature extraction with content-addressed caching -> shared-head
+  probe training (ID CE + batch-hard triplet) -> probe-based re-acquisition
+  evaluation -> external baselines **F** (Kalman dead-reckoning), **G**
+  (raw appearance embedding cosine), **H** (AIS-fused Haversine) on the
+  identical episodes -> per-duration metrics + degradation slopes.
 
 Stubs (fail loudly, land in later commits): VesselReID adapter, OpenVLA live
-feature extraction, V-JEPA predictor future-latency, ByteTrack/BoT-SORT and
-AIS-upper-bound baselines, probe trainer, stress-suite and report runs.
+feature extraction, V-JEPA predictor future-latency, multi-seed run loop and
+comparison report generation, stress-suite and report runs.

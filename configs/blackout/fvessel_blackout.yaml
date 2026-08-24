@@ -1,0 +1,15 @@
+# Blackout-episode generation config (brief P1).
+blackout:
+  durations_s: [10, 30, 60, 120]
+  min_visible_before_s: 5.0
+  min_visible_after_s: 1.0
+  withhold_ais: true
+  jitter_ms: 200
+  ais_dropout_p: 0.2
+  pool_size: 5
+  episodes_per_duration_per_tracklet: 1
+  seed: 42
+
+manifest_path: data/manifests/fvessel.jsonl
+ais_manifest_path: data/manifests/fvessel_ais.jsonl
+episodes_path: data/gap_trials/fvessel_blackout.jsonl

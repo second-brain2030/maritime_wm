@@ -1,6 +1,7 @@
-# V-JEPA arms (spec §13): prefer Hugging Face Transformers for encoder-only
-# feature extraction; the official V-JEPA repo is used for predictor features.
-# Pin exact checkpoint ids and versions in configs/models/*.yaml and record
-# them in experiment metadata.
+# V-JEPA arms (spec §13): encoder via the official repo's torch.hub entry
+# (facebookresearch/vjepa2 -> hubconf.py). First use downloads the weights.
+# The official repo is used for predictor features (blocked_by_api until wired).
+# Pin the exact checkpoint id in configs/models/*.yaml.
 transformers>=4.40
 timm>=0.9
+einops>=0.7

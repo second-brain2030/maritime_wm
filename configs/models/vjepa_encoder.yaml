@@ -1,7 +1,5 @@
-# Arm C: frozen V-JEPA 2.1 encoder probe (spec §6.B/C, §13).
-# PIN the exact hub checkpoint id (repo:hub-model); first use downloads weights.
+# Arm B: frozen V-JEPA 2.1 encoder probe (spec §6.B/C, §13).
+# Loads the local vjepa2 submodule (models/vjepa2) + checkpoint
+# vjepa2_1_vitb_dist_vitG_384 (1.6 GB, first run: submodule update + weights).
 arm: vjepa_encoder
-checkpoint: "facebookresearch/vjepa2:vjepa2_1_vit_base_384"
 frozen: true
-embedding_dim: 768
-input_size: 384

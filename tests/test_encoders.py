@@ -50,23 +50,24 @@ def test_siglip_constructor_no_download():
     assert enc.embedding_dim == 768
 
 
-def test_vjepa_constructor_validation():
-    with pytest.raises(ValueError):
-        encoder_registry.create("vjepa_encoder", checkpoint="no-colon-format")
-    with pytest.raises(ValueError):
-        encoder_registry.create("vjepa_encoder", checkpoint="repo:nonexistent_model")
-    enc = encoder_registry.create("vjepa_encoder")
-    assert enc.name == "vjepa_encoder_vjepa2_1_vit_base_384"
-    assert enc.checkpoint == "facebookresearch/vjepa2:vjepa2_1_vit_base_384"
+def test_vjepa_class_attributes_no_download():
+    # Attribute-level checks only: instantiating the adapter loads 1.6 GB of
+    # weights (submodule models/vjepa2 + timm), which belongs in the run
+    # environment, not CI.
+    from models.vjepa_adapter import VJEPAEncoderAdapter
+    from models.vjepa_predictor_adapter import VJEPAPredictorAdapter
+
+    assert VJEPAEncoderAdapter.name == "vjepa_encoder_vitb384"
+    assert VJEPAEncoderAdapter.embedding_dim == 768
+    assert VJEPAEncoderAdapter.CHECKPOINT == "vjepa2_1_vitb_dist_vitG_384"
+    assert VJEPAPredictorAdapter.embedding_dim == 1664  # teacher embedding space
+    assert VJEPAPredictorAdapter.CHECKPOINT == "vjepa2_1_vitb_dist_vitG_384"
 
 
-def test_vjepa_predictor_blocked_by_api():
-    # encode_predicted/predict_future fail before any weight download
-    enc = encoder_registry.create("vjepa_encoder")
-    with pytest.raises(NotImplementedError):
-        enc.encode_predicted(torch.rand(1, 2, 3, 64, 64), None)
-    with pytest.raises(NotImplementedError):
-        enc.predict_future(torch.rand(1, 2, 3, 64), 10)
+def test_vjepa_registry_names():
+    names = encoder_registry.names()
+    assert "vjepa_encoder" in names
+    assert "vjepa_predictor" in names
 
 
 def test_openvla_feature_source_validated():

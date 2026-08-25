@@ -98,12 +98,22 @@ class KalmanDeadReckon:
         gap_seconds: float,
         gallery_centroids: dict[str, np.ndarray],
     ) -> list[str]:
-        """Extrapolate ``predicted = query_centroid + query_velocity *
-        gap_seconds`` and rank gallery centroids by Euclidean distance to it,
-        nearest first."""
-        predicted = np.asarray(query_centroid, dtype=float) + np.asarray(
-            query_velocity, dtype=float
-        ) * float(gap_seconds)
+        """Extrapolate via the Kalman filter and rank gallery centroids
+        nearest-first.
+
+        Seeds a 2-point trajectory (t-1, t) from centroid + velocity and
+        projects ``gap_seconds`` ahead through ``predict_position`` (the KF
+        path). Falls back to linear extrapolation when filterpy is absent.
+        """
+        centroid = np.asarray(query_centroid, dtype=float)
+        velocity = np.asarray(query_velocity, dtype=float)
+        gap_steps = max(1, int(round(gap_seconds / self.dt)))
+        try:
+            positions = np.stack([centroid - velocity * self.dt, centroid])
+            predicted, _ = self.predict_position(positions, gap_steps)
+        except (ImportError, RuntimeError):
+            # filterpy absent: fall back to linear extrapolation
+            predicted = centroid + velocity * float(gap_seconds)
         return sorted(
             gallery_centroids.keys(),
             key=lambda tid: float(

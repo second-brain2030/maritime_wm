@@ -33,11 +33,14 @@ def test_cnn_encode_returns_features():
     assert enc.encode_predicted(frames) is None
 
 
-def test_predictor_arm_is_not_silent():
-    enc = encoder_registry.create("vjepa_predictor")
-    assert enc.predictor_horizon_delta == 60.0
-    with pytest.raises(NotImplementedError):
-        enc.encode_predicted(None, None)  # type: ignore[arg-type]
+def test_predictor_arm_not_silent():
+    # V-JEPA adapters load 1.6 GB weights on instantiation (run env, not CI);
+    # here we verify the class-level contract only.
+    from models.vjepa_predictor_adapter import VJEPAPredictorAdapter
+
+    assert "vjepa_predictor" in encoder_registry
+    assert VJEPAPredictorAdapter.embedding_dim == 1664
+    assert VJEPAPredictorAdapter.CHECKPOINT == "vjepa2_1_vitb_dist_vitG_384"
 
 
 def test_openvla_feature_source_validated():

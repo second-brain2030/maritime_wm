@@ -28,7 +28,8 @@ def main() -> None:
     arm = cfg["model"]["arm"]
     features_dir = args.features_dir or str(Path(cfg.get("features_dir", "outputs/features")) / arm)
     token_dim = args.token_dim or int(
-        cfg.get("model", {}).get("embedding_dim", 2048)
+        cfg.get("model", {}).get("token_dim")
+        or cfg.get("model", {}).get("embedding_dim", 2048)
     )
     out = Path(args.output or f"outputs/probes/{arm}/probe.pt")
     out.parent.mkdir(parents=True, exist_ok=True)

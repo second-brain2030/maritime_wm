@@ -110,18 +110,21 @@ class VJEPAPredictorAdapter(TrackletEncoder):
 
         Returns [B, N_obs_tokens, 768] — the visible portion of the latent space.
         Concatenate with encode_predicted output before passing to SharedReIDHead.
+
+        NO-LEAK GUARANTEE: the encoder receives only the observed temporal
+        frames (trimmed to the context span) and never sees the future/masked
+        frames, so bidirectional attention cannot leak post-gap information
+        into the context tokens.
         """
         x = _preprocess(frames).to(self.device)   # [B, C, T, 384, 384]
         T = x.shape[2]
         n_temporal = T // _TEMPORAL_STRIDE
         n_obs = max(1, int(n_temporal * self.obs_fraction))
+        n_frames_obs = n_obs * _TEMPORAL_STRIDE
 
-        # Observed indices: first n_obs temporal slots × all spatial patches
-        obs_idx = torch.arange(n_obs * _SPATIAL_PATCHES, device=self.device)
-
-        # Encode full clip; then select observed tokens
-        all_tokens = self.encoder(x)              # [B, N_total, 768]
-        return all_tokens[:, obs_idx, :]          # [B, N_obs, 768]
+        # Encode ONLY the observed frames -> tokens are free of future influence
+        tokens = self.encoder(x[:, :, :n_frames_obs, :, :])  # [B, N_obs, 768]
+        return tokens
 
     @torch.no_grad()
     def encode_predicted(
@@ -132,6 +135,9 @@ class VJEPAPredictorAdapter(TrackletEncoder):
         Returns [B, N_pred_tokens, 768] — predictor's best guess at the
         future/occluded portion, without ever seeing those frames.
         Combine with encode_observed for the full Arm C token sequence.
+
+        NO-LEAK GUARANTEE: the context tokens are computed from the observed
+        frames only (trimmed clip); the predictor sees no future frames.
         """
         x = _preprocess(frames).to(self.device)   # [B, C, T, 384, 384]
         B, C, T, H, W = x.shape
@@ -141,10 +147,10 @@ class VJEPAPredictorAdapter(TrackletEncoder):
         if n_pred == 0:
             return None   # no future tokens to predict
 
-        # Encode full clip; split into context / target
-        all_tokens = self.encoder(x)              # [B, N_total, 768]
-        obs_end  = n_obs  * _SPATIAL_PATCHES
-        ctx_tokens = all_tokens[:, :obs_end, :]   # [B, N_obs, 768]
+        # Encode the observed prefix only (no future-frame leakage)
+        n_frames_obs = n_obs * _TEMPORAL_STRIDE
+        ctx_tokens = self.encoder(x[:, :, :n_frames_obs, :, :])  # [B, N_obs, 768]
+        obs_end = ctx_tokens.shape[1]
 
         # Build index masks for predictor — shape must be [B, K] (2D)
         masks_x = [torch.arange(obs_end, device=self.device).unsqueeze(0).expand(B, -1)]

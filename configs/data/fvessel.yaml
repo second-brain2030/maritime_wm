@@ -1,3 +1,4 @@
+# @package _global_
 # FVessel dataset config (brief P1; spec §4). Public dataset:
 # github.com/gy65896/FVessel, HF: gy65896/FVessel (26 video+AIS sequences).
 dataset: fvessel
@@ -11,6 +12,14 @@ sample_mode: uniform
 input_resolution: 224
 short_tracklet_policy: repeat_last
 long_tracklet_policy: uniform_subsample
+
+# --- task-spec keys (phase 3b FVesselAdapter: public data/raw/fvessel layout) ---
+raw_root: data/raw/fvessel
+anno_dir: annotations
+ais_dir: ais
+frame_ext: ".jpg"
+fps_fallback: 25.0
+manifest_out: data/manifests/fvessel.jsonl
 
 layout:
   sequences_dir: "01_Video+AIS"

@@ -45,6 +45,9 @@ source .venv/bin/activate
 pip install -e .            # base requirements (torch, numpy, yaml, ...)
 pip install -r requirements/vjepa.txt    # for V-JEPA arms
 pip install -r requirements/openvla.txt  # for the VLA arm (heavy; see file)
+
+# V-JEPA 2.1 weights (vendored repo, 1.6 GB, first run only):
+git submodule update --init --recursive
 ```
 
 ## Data

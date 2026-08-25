@@ -1,0 +1,16 @@
+# @package _global_
+# FVessel blackout-gap evaluation protocol (phase 3b BlackoutHarness).
+# Controlled disappearance-gap episodes: mask visual observations for
+# 10/30/60/120s and withhold AIS inside the blackout window (retained as
+# hidden ground truth). Deterministic by seed.
+dataset: fvessel
+gap_protocol:
+  enabled: true
+  blackout_durations: [10, 30, 60, 120]
+  gallery_pool_size: 10
+  ais_modes: [withheld, available]
+  ais_jitter_ms_range: [0, 500]
+  synthetic_gap_holdout: 0.5
+  seed: 42
+  manifest_path: data/manifests/fvessel.jsonl
+  episodes_out: data/gap_trials/fvessel_blackout.jsonl

@@ -1,3 +1,4 @@
+# @package _global_
 # Shared experiment defaults (spec §11 example config). Experiment configs
 # extend this file; resolved configs are dumped to every output dir.
 experiment:

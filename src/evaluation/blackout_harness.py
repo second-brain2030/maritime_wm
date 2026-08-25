@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from data.ais import AisTrajectory, split_pings_by_window
@@ -63,6 +65,13 @@ class BlackoutEpisode:
     gt_lonlat_at_reappearance: list[float] | None  # [lon, lat] from withheld AIS
     withheld_ping_count: int = 0
     ais_withheld: bool = True
+    # --- task-spec fields (phase 3b blackout harness) ---
+    query_tracklet_id: str = ""               # pre-blackout tracklet
+    gallery_tracklet_ids: list[str] = field(default_factory=list)  # candidates at reappearance (target first)
+    target_tracklet_id: str = ""              # ground-truth identity at reappearance
+    blackout_seconds: float = 0.0             # 10 / 30 / 60 / 120
+    ais_ground_truth: list[dict] = field(default_factory=list)  # hidden AIS pings during blackout window
+    timestamp_jitter_ms: float = 0.0          # simulated jitter applied to AIS timestamps
 
     def validate(self) -> None:
         if not self.episode_id or not self.vessel_id:
@@ -246,3 +255,270 @@ class BlackoutEpisodeManifest:
             ),
             "by_split": dict(Counter(e.split for e in self._episodes)),
         }
+
+
+def _parse_ais_timestamp(value: Any) -> datetime | None:
+    """Parse an AIS ping timestamp (datetime or ISO-8601 string) to aware UTC."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+class BlackoutHarness:
+    """Task-spec disappearance-gap harness (phase 3b).
+
+    Generates controlled evaluation episodes from normalized tracklets: each
+    tracklet is split at its midpoint into pre-gap (query) and post-gap
+    (gallery) segments with a ``duration``-second visual blackout in between.
+    AIS pings inside the blackout window are withheld and retained as hidden
+    ground truth; their timestamps are jittered with Gaussian noise to model
+    asynchronous AIS messaging. Deterministic by a fixed seed throughout.
+    """
+
+    BLACKOUT_DURATIONS = [10.0, 30.0, 60.0, 120.0]  # seconds
+
+    def __init__(
+        self,
+        manifest: Sequence[TrackletManifest],
+        config: Mapping[str, Any],
+        seed: int = 42,
+    ) -> None:
+        self.manifest = list(manifest)
+        self.seed = int(seed)
+        self.rng = random.Random(self.seed)
+        self.blackout_durations = [
+            float(d) for d in config.get("blackout_durations", self.BLACKOUT_DURATIONS)
+        ]
+        lo, hi = config.get("ais_jitter_ms_range", [0, 500])
+        self.ais_jitter_ms_range = (float(lo), float(hi))
+        self.gallery_pool_size = int(config.get("gallery_pool_size", 10))
+        self.synthetic_gap_holdout = float(config.get("synthetic_gap_holdout", 0.5))
+
+    # ------------------------------------------------------------------ API
+    def build(self) -> list[BlackoutEpisode]:
+        """Build episodes for all configured durations, sorted by
+        (blackout_seconds, episode_id). Deterministic: fixed seed throughout."""
+        episodes: list[BlackoutEpisode] = []
+        for duration in self.blackout_durations:
+            episodes.extend(self._build_episodes_for_duration(duration))
+        episodes.sort(key=lambda e: (e.blackout_seconds, e.episode_id))
+        return episodes
+
+    def save_episodes(self, episodes: Sequence[BlackoutEpisode], path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            for e in episodes:
+                f.write(json.dumps(e.to_dict(), sort_keys=True, default=str) + "\n")
+
+    def load_episodes(self, path: str | Path) -> list[BlackoutEpisode]:
+        episodes: list[BlackoutEpisode] = []
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    episodes.append(BlackoutEpisode.from_dict(json.loads(line)))
+        return episodes
+
+    @staticmethod
+    def evaluate_arm(
+        episodes: Sequence[BlackoutEpisode],
+        rankings: Mapping[str, Sequence[str]],  # episode_id -> ranked gallery_tracklet_ids
+    ) -> dict[float, dict[str, float | int]]:
+        """Re-acquisition accuracy per blackout duration bin.
+
+        Returns ``{duration: {top1: float, top5: float, num_episodes: int}}``
+        where top1/top5 are the fractions of episodes whose target tracklet is
+        ranked first / within the top 5 of the gallery ranking.
+        """
+        by_duration: dict[float, list[BlackoutEpisode]] = {}
+        for ep in episodes:
+            by_duration.setdefault(float(ep.blackout_seconds), []).append(ep)
+        out: dict[float, dict[str, float | int]] = {}
+        for duration in sorted(by_duration):
+            eps = by_duration[duration]
+            top1 = top5 = 0
+            for ep in eps:
+                ranked = list(rankings.get(ep.episode_id, []) or [])
+                if not ranked:
+                    continue
+                if ranked[0] == ep.target_tracklet_id:
+                    top1 += 1
+                if ep.target_tracklet_id in ranked[:5]:
+                    top5 += 1
+            out[duration] = {
+                "top1": top1 / len(eps),
+                "top5": top5 / len(eps),
+                "num_episodes": len(eps),
+            }
+        return out
+
+    # ------------------------------------------------------------- internal
+    def _build_episodes_for_duration(self, duration: float) -> list[BlackoutEpisode]:
+        episodes: list[BlackoutEpisode] = []
+        for tracklet in self.manifest:
+            fps = tracklet.fps
+            n = len(tracklet.frame_paths)
+            if fps is None or fps <= 0 or n == 0:
+                continue
+            if n <= 2 * duration * fps:  # need > 2*duration of visible footage
+                continue
+            mid_s = (n - 1) / fps / 2.0
+            gap_start_s = mid_s - duration / 2.0
+            gap_end_s = mid_s + duration / 2.0
+            query_idx = [i for i in range(n) if i / fps < gap_start_s]
+            gallery_idx = [i for i in range(n) if i / fps > gap_end_s]
+            if not query_idx or not gallery_idx:
+                continue
+
+            pool = self._gallery_pool(tracklet, self.gallery_pool_size)
+            gallery_tracklet_ids = [tracklet.tracklet_id] + [t.tracklet_id for t in pool]
+            candidate_vessel_ids = [tracklet.vessel_id] + [t.vessel_id for t in pool]
+            candidate_vessel_ids = list(dict.fromkeys(candidate_vessel_ids))
+
+            jitter_ms = self.rng.uniform(*self.ais_jitter_ms_range)
+            anchor_ms = self._time_anchor_ms(tracklet)
+            ais_gt = self._ais_ground_truth(
+                tracklet, gap_start_s, gap_end_s, fps, jitter_ms, anchor_ms
+            )
+
+            reappearance_frame = gallery_idx[0]
+            reappearance_s = reappearance_frame / fps
+            gt_lonlat = self._nearest_lonlat(ais_gt, reappearance_s, anchor_ms)
+            gt_bbox = None
+            if tracklet.frame_bboxes and reappearance_frame < len(tracklet.frame_bboxes):
+                gt_bbox = tracklet.frame_bboxes[reappearance_frame]
+
+            episode = BlackoutEpisode(
+                episode_id=f"blk_{tracklet.tracklet_id}_{int(duration)}s",
+                sequence_id=tracklet.camera_id,
+                vessel_id=tracklet.vessel_id,
+                split=tracklet.split,
+                blackout_duration_s=duration,
+                blackout_start_frame=int(round(gap_start_s * fps)),
+                blackout_start_utc_ms=int(gap_start_s * 1000),
+                reappearance_frame=reappearance_frame,
+                query_frame_indices=query_idx,
+                candidate_vessel_ids=candidate_vessel_ids,
+                gt_bbox_at_reappearance=gt_bbox,
+                gt_lonlat_at_reappearance=gt_lonlat,
+                withheld_ping_count=len(ais_gt),
+                ais_withheld=True,  # primary evaluation withholds AIS
+                query_tracklet_id=tracklet.tracklet_id,
+                gallery_tracklet_ids=gallery_tracklet_ids,
+                target_tracklet_id=tracklet.tracklet_id,
+                blackout_seconds=duration,
+                ais_ground_truth=ais_gt,
+                timestamp_jitter_ms=round(jitter_ms, 3),
+            )
+            episodes.append(episode)
+        return episodes
+
+    def _gallery_pool(
+        self, tracklet: TrackletManifest, pool_size: int
+    ) -> list[TrackletManifest]:
+        """Sample ``pool_size``-1 candidates from same-split tracklets.
+
+        Candidates sharing the target's ``vessel_type`` are preferred (class
+        similarity); the remainder are drawn uniformly. Deterministic via the
+        harness's fixed RNG.
+        """
+        same_split = [
+            t
+            for t in self.manifest
+            if t.split == tracklet.split and t.tracklet_id != tracklet.tracklet_id
+        ]
+        target_type = tracklet.vessel_type
+        similar = [t for t in same_split if target_type and t.vessel_type == target_type]
+        rest = [t for t in same_split if t not in similar]
+        self.rng.shuffle(similar)
+        self.rng.shuffle(rest)
+        chosen = similar[: pool_size - 1]
+        if len(chosen) < pool_size - 1:
+            chosen += rest[: pool_size - 1 - len(chosen)]
+        return chosen
+
+    def _ais_ground_truth(
+        self,
+        tracklet: TrackletManifest,
+        gap_start_s: float,
+        gap_end_s: float,
+        fps: float,
+        jitter_ms: float,
+        anchor_ms: int | None,
+    ) -> list[dict]:
+        """AIS pings inside the blackout window with jittered timestamps.
+
+        Frame time is anchored to ``frame_timestamps_utc_ms[0]`` when present,
+        else to the earliest AIS ping timestamp; without either anchor no pings
+        can be aligned and ``[]`` is returned.
+        """
+        traj = tracklet.ais_trajectory
+        if not traj or anchor_ms is None:
+            return []
+        std_s = jitter_ms / 1000.0
+        out: list[dict] = []
+        for ping in traj:
+            ts = _parse_ais_timestamp(ping.get("timestamp"))
+            lat, lon = ping.get("lat"), ping.get("lon")
+            if ts is None or lat is None or lon is None:
+                continue
+            rel_s = (int(ts.timestamp() * 1000) - anchor_ms) / 1000.0
+            if gap_start_s <= rel_s <= gap_end_s:
+                jittered = ts + timedelta(seconds=self.rng.gauss(0.0, std_s))
+                out.append(
+                    {
+                        "timestamp": jittered.isoformat(),
+                        "mmsi": str(ping.get("mmsi", "")),
+                        "lat": float(lat),
+                        "lon": float(lon),
+                        "sog": float(ping["sog"]) if ping.get("sog") is not None else None,
+                        "cog": float(ping["cog"]) if ping.get("cog") is not None else None,
+                    }
+                )
+        return out
+
+    def _time_anchor_ms(self, tracklet: TrackletManifest) -> int | None:
+        """Epoch-ms anchor for frame time 0 (frame index 0)."""
+        if tracklet.frame_timestamps_utc_ms:
+            return tracklet.frame_timestamps_utc_ms[0]
+        if tracklet.ais_trajectory:
+            stamps = [
+                _parse_ais_timestamp(p.get("timestamp"))
+                for p in tracklet.ais_trajectory
+                if p.get("timestamp") is not None
+            ]
+            stamps = [s for s in stamps if s is not None]
+            if stamps:
+                return int(min(stamps).timestamp() * 1000)
+        return None
+
+    @staticmethod
+    def _nearest_lonlat(
+        ais_gt: Sequence[dict], reappearance_s: float, anchor_ms: int | None
+    ) -> list[float] | None:
+        """[lon, lat] of the withheld ping nearest the reappearance time."""
+        if not ais_gt or anchor_ms is None:
+            return None
+        reapp_ms = anchor_ms + int(reappearance_s * 1000)
+        best, best_d = None, float("inf")
+        for ping in ais_gt:
+            ts = _parse_ais_timestamp(ping.get("timestamp"))
+            if ts is None:
+                continue
+            d = abs(int(ts.timestamp() * 1000) - reapp_ms)
+            if d < best_d:
+                best_d, best = d, [ping["lon"], ping["lat"]]
+        return best

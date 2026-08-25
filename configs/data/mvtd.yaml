@@ -1,3 +1,4 @@
+# @package _global_
 # MVTD dataset config (brief P2; spec §4). Public dataset:
 # arXiv 2506.02866, HF: AhsanBB/Maritime_Visual_Tracking_Dataset_MVTD
 # (182 sequences, GOT-10k layout, Boat/Ship/SailBoat/USV).

@@ -1,6 +1,9 @@
+# @package _global_
 # Disappearance-gap re-acquisition (DGRA) protocol (spec §7.1, §4.4).
 # gap bins: seconds are used when timestamps exist; frame-count bins are the
 # fallback when they do not. Record gap_duration_source in every trial.
+dataset: viv_reid
+manifest_path: data/manifests/viv_reid.jsonl
 gap_protocol:
   enabled: true
   gap_bins_seconds:

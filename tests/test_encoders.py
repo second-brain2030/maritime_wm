@@ -2,7 +2,6 @@ import pytest
 import torch
 
 from models import encoder_registry
-from models.cnn_reid import CnnReidEncoder
 from models.transformers_encoders import DinoV2Encoder, SigLIPEncoder
 
 
@@ -17,7 +16,7 @@ def test_registry_has_all_arms():
 
 def test_cnn_encoder_shapes_no_download():
     enc = encoder_registry.create("cnn_reid", pretrained=False)
-    assert enc.name == "cnn_reid_resnet50"
+    assert enc.name == "cnn_reid"
     assert enc.embedding_dim == 2048
     frames = torch.rand(1, 2, 3, 64, 64)  # [B, T, C, H, W]
     x = enc.preprocess(frames)
@@ -27,9 +26,15 @@ def test_cnn_encoder_shapes_no_download():
     assert not torch.isnan(tokens).any()
 
 
-def test_cnn_backbone_validation():
-    with pytest.raises(NotImplementedError):
-        encoder_registry.create("cnn_reid", backbone="resnet50_ibn_a")
+def test_cnn_backbone_fallback_without_torchreid():
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        enc = encoder_registry.create("cnn_reid", backbone="osnet_x1_0", pretrained=False)
+    assert enc.name == "cnn_reid"
+    assert enc.embedding_dim == 2048
+    assert any("torchreid" in str(x.message) for x in w)
 
 
 def test_dinov2_constructor_no_download():

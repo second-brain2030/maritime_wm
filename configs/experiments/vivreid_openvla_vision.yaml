@@ -1,3 +1,4 @@
+# @package _global_
 extends: _base
 experiment:
   name: vivreid_openvla_vision

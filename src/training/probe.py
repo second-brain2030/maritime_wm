@@ -54,7 +54,7 @@ class ProbeArtifacts:
 
 def build_head(artifacts: ProbeArtifacts) -> SharedReIDHead:
     head = SharedReIDHead(
-        token_dim=artifacts.token_dim,
+        input_dim=artifacts.token_dim,
         embed_dim=artifacts.embed_dim,
         num_classes=len(artifacts.class_map),
     )
@@ -122,7 +122,7 @@ def train_probe(
     labels = torch.tensor([class_map[m.vessel_id] for m in train_manifests])
 
     head = SharedReIDHead(
-        token_dim=token_dim, embed_dim=embed_dim, num_classes=len(class_map)
+        input_dim=token_dim, embed_dim=embed_dim, num_classes=len(class_map)
     ).to(device)
     optimizer = torch.optim.AdamW(head.parameters(), lr=lr)
     ce_loss = IDCrossEntropyLoss()

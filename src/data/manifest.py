@@ -41,6 +41,7 @@ class TrackletManifest:
     frame_indices: list[int] | None = None   # indices into the video (or None for image lists)
     frame_timestamps_utc_ms: list[int] | None = None  # aligned to frame_paths
     frame_bboxes: list[list[float] | None] | None = None  # [x, y, w, h] per frame, None = not visible
+    ais_trajectory: list[dict] | None = None  # AIS pings near the tracklet window (FVessel, task spec §2)
 
     def validate(self) -> None:
         errors: list[str] = []

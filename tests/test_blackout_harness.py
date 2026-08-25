@@ -1,8 +1,8 @@
 import pytest
 
-from data.ais import AisPing, AisTrajectory
-from data.manifest import TrackletManifest
-from evaluation.blackout_harness import (
+from src.data.ais import AisPing, AisTrajectory
+from src.data.manifest import TrackletManifest
+from src.evaluation.blackout_harness import (
     BlackoutConfig,
     BlackoutEpisodeManifest,
     build_blackout_episodes,

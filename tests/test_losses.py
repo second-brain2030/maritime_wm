@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch.nn import functional as F
 
-from training.losses import BatchHardTripletLoss, IDCrossEntropyLoss
+from src.training.losses import BatchHardTripletLoss, IDCrossEntropyLoss
 
 
 def test_triplet_identity_no_loss():

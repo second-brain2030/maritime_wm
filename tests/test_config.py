@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from utils.config import deep_merge, load_config
+from src.utils.config import deep_merge, load_config
 
 
 def test_deep_merge():

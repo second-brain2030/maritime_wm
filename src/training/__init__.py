@@ -1,5 +1,16 @@
 """Training package: losses, trainer, callbacks."""
-from .losses import BatchHardTripletLoss, IDCrossEntropyLoss
-from .callbacks import EarlyStopping, ModelCheckpoint
+from .callbacks import EarlyStopping, FeatureCache, MetricLogger, ModelCheckpoint
+from .losses import BatchHardTripletLoss, CombinedLoss, IDCELoss, IDCrossEntropyLoss
+from .trainer import ProbeTrainer
 
-__all__ = ["BatchHardTripletLoss", "IDCrossEntropyLoss", "EarlyStopping", "ModelCheckpoint"]
+__all__ = [
+    "BatchHardTripletLoss",
+    "CombinedLoss",
+    "IDCELoss",
+    "IDCrossEntropyLoss",
+    "EarlyStopping",
+    "FeatureCache",
+    "MetricLogger",
+    "ModelCheckpoint",
+    "ProbeTrainer",
+]

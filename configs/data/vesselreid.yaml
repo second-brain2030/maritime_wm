@@ -1,3 +1,4 @@
+# @package _global_
 # VesselReID dataset config (spec §4.2) - image-level transfer/ablation only.
 dataset: vesselreid
 root: data/raw/vesselreid

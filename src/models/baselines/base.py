@@ -10,7 +10,7 @@ from typing import Mapping, Protocol
 
 from torch import Tensor
 
-from data.gap_trials import GapTrial
+from src.data.gap_trials import GapTrial
 
 
 class GapBaseline(Protocol):

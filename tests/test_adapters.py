@@ -2,8 +2,10 @@
 no overlap violations; query/gallery manifest schema validation)."""
 import pytest
 
-from data.adapters import adapter_registry, get_adapter
-from data.adapters.viv_reid import ViVReidAdapter
+from src.data.adapters import adapter_registry, get_adapter
+from src.data.adapters.viv_reid import ViVReidAdapter
+from src.data.manifest import TrackletManifest, load_manifests, save_manifests
+from src.data.splits import identity_sets, validate_identity_disjointness
 
 LAYOUT = {
     # Spec §12: train identities must be disjoint from query/gallery;
@@ -113,3 +115,71 @@ def test_camera_unknown_without_pattern(tmp_path):
     cfg = {"root": str(root), "layout": {"tracklet_identity_pattern": r"^(?P<vessel_id>v\d+)_.*$"}}
     ms = ViVReidAdapter(cfg).build_manifests()
     assert all(m.camera_id == "unknown" for m in ms)
+
+
+# ---------------------------------------------------------------------------
+# TrackletManifest schema / persistence / fingerprint (spec section 4.3, 13)
+# ---------------------------------------------------------------------------
+
+def _manifest(tid="t1", vid="v1", split="train", n_frames=3, **kw):
+    return TrackletManifest(
+        tracklet_id=tid,
+        vessel_id=vid,
+        camera_id="cam0",
+        split=split,
+        frame_paths=[f"{tid}_{i:03d}.jpg" for i in range(n_frames)],
+        **kw,
+    )
+
+
+def test_manifest_schema_valid():
+    m = _manifest(
+        timestamp_start="2024-01-01T00:00:00Z",
+        timestamp_end="2024-01-01T00:00:02Z",
+        fps=25.0,
+        quality_score=0.9,
+        occlusion_level="partial",
+    )
+    m.validate()  # must not raise
+
+
+def test_manifest_roundtrip(tmp_path):
+    ms = [
+        _manifest("t1", "v1", "train", n_frames=3),
+        _manifest("t2", "v2", "query", n_frames=2, frame_timestamps_utc_ms=[0, 100]),
+        _manifest("t3", "v3", "gallery", n_frames=1, source_dataset="mvtd"),
+    ]
+    path = tmp_path / "manifests.jsonl"
+    save_manifests(str(path), ms)
+    loaded = load_manifests(str(path))
+    assert [m.to_dict() for m in loaded] == [m.to_dict() for m in ms]
+    for m in loaded:
+        m.validate()
+
+
+def test_manifest_hash_stable():
+    # fingerprint() is the stable content hash (feature-cache keys)
+    a = _manifest("t1").fingerprint()
+    b = _manifest("t1").fingerprint()  # identical content -> identical hash
+    assert a == b
+    c = _manifest("t2").fingerprint()  # different tracklet_id -> different hash
+    assert a != c
+    d = _manifest("t1", n_frames=5).fingerprint()  # different content -> different hash
+    assert a != d
+
+
+def test_split_no_overlap():
+    # Spec section 12: train identities must be disjoint from query+gallery.
+    ms = [
+        _manifest("t1", "v001", "train"),
+        _manifest("t2", "v001", "train"),
+        _manifest("q1", "v002", "query"),
+        _manifest("g1", "v002", "gallery"),
+        _manifest("g2", "v003", "gallery"),
+    ]
+    sets = identity_sets(ms)
+    assert sets["train"] & (sets["query"] | sets["gallery"]) == set()
+    report = validate_identity_disjointness(ms)
+    assert report["train_query_overlap"] == []
+    assert report["train_gallery_overlap"] == []
+    assert report["train_identity_count"] == 1

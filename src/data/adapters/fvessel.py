@@ -16,19 +16,30 @@ Outputs: one TrackletManifest per (sequence, tracked vessel) with per-frame
 bboxes/timestamps; AIS trajectories; per-sequence camera meta. AIS pings are
 kept separate so the blackout harness can withhold them as hidden ground
 truth (brief P1).
+
+Two adapter classes coexist here:
+
+* ``FvesselAdapter`` — legacy pilot adapter for the raw ``01_Video+AIS``
+  layout (``build_manifests()``, per-sequence dirs under root/layout).
+* ``FVesselAdapter`` — task-spec adapter (phase 3b) for the public
+  ``data/raw/fvessel/{videos,annotations,ais}`` layout: per-sequence
+  ``videos/seq_001/`` frame dirs + ``annotations/seq_001.csv|.json`` +
+  ``ais/seq_001.csv``; exposes ``build_manifest()``/``run()`` and stores the
+  matched AIS trajectory on the manifest as ``ais_trajectory``.
 """
 from __future__ import annotations
 
 import csv
+import json
 import random
 import re
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..ais import AisPing, AisTrajectory
-from ..manifest import TrackletManifest
+from ..manifest import TrackletManifest, save_manifests
 from ..splits import validate_identity_disjointness
 from .base import DatasetAdapter
 
@@ -353,3 +364,275 @@ def _opt_float(v: str) -> float | None:
 
 def _opt_str(v: str) -> str | None:
     return v if v not in ("", "None") else None
+
+
+# ---------------------------------------------------------------------------
+# Task-spec adapter (phase 3b). Public repo layout assumed (documented in the
+# module docstring):
+#
+#   data/raw/fvessel/
+#     videos/          seq_001/ ... seq_026/  frame dirs, <frame_id:06d><frame_ext>
+#     annotations/     per-sequence bbox-track CSV or JSON
+#     ais/             per-sequence AIS CSV: timestamp,mmsi,lat,lon,sog,cog
+# ---------------------------------------------------------------------------
+_ANNO_COLUMN_ALIASES = {
+    "frame_id": ("frame_id", "frame", "Frame"),
+    "track_id": ("track_id", "track", "id", "trackid", "Track ID"),
+    "x1": ("x1", "xmin", "left", "x_left"),
+    "y1": ("y1", "ymin", "top", "y_top"),
+    "x2": ("x2", "xmax", "right", "x_right"),
+    "y2": ("y2", "ymax", "bottom", "y_bottom"),
+    "vessel_class": ("vessel_class", "class", "cls", "type", "vessel_type"),
+}
+
+
+def _normalize_anno_row(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Map raw annotation columns/keys to the canonical field names."""
+    lowered = {str(k).strip().lower(): v for k, v in raw.items()}
+    out: dict[str, Any] = {}
+    for canon, aliases in _ANNO_COLUMN_ALIASES.items():
+        key = next((a for a in aliases if a in raw), None)
+        if key is None:
+            key = next((a.lower() for a in aliases if a.lower() in lowered), None)
+        if key is None:
+            continue
+        out[canon] = raw[key]
+    try:
+        frame_id = int(out.get("frame_id"))
+        track_id = str(out.get("track_id"))
+    except (TypeError, ValueError):
+        return None
+    if out.get("x1") is None or out.get("y1") is None or out.get("x2") is None or out.get("y2") is None:
+        return None
+    return {
+        "frame_id": frame_id,
+        "track_id": track_id,
+        "x1": float(out["x1"]),
+        "y1": float(out["y1"]),
+        "x2": float(out["x2"]),
+        "y2": float(out["y2"]),
+        "vessel_class": str(out["vessel_class"]) if out.get("vessel_class") not in (None, "") else None,
+    }
+
+
+def _parse_ais_timestamp(value: Any) -> datetime | None:
+    """Parse an AIS CSV timestamp cell (ISO-8601 with T or space) to aware UTC."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+class FVesselAdapter:
+    """Task-spec FVessel adapter (phase 3b): public ``data/raw/fvessel`` layout.
+
+    Config keys: ``raw_root``, ``manifest_out``, ``fps_fallback`` (default
+    25.0), ``ais_dir`` (relative to raw_root, default "ais"), ``anno_dir``
+    (default "annotations"), ``frame_ext`` (default ".jpg").
+    """
+
+    dataset_name = "fvessel"
+    SEQUENCE_IDS = [f"seq_{i:03d}" for i in range(1, 27)]  # seq_001..seq_026
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.raw_root = Path(config.get("raw_root", "data/raw/fvessel"))
+        self.manifest_out = Path(config.get("manifest_out", "data/manifests/fvessel.jsonl"))
+        self.fps_fallback = float(config.get("fps_fallback", 25.0))
+        self.ais_dir = config.get("ais_dir", "ais")
+        self.anno_dir = config.get("anno_dir", "annotations")
+        self.frame_ext = config.get("frame_ext", ".jpg")
+        if not self.frame_ext.startswith("."):
+            self.frame_ext = "." + self.frame_ext
+
+    # ------------------------------------------------------------------ API
+    def build_manifest(self) -> list[TrackletManifest]:
+        """Build normalized tracklets for seq_001..seq_026.
+
+        Splits by sequence index: seq_001-018 -> train, seq_019-022 -> query,
+        seq_023-026 -> gallery. Track identity IS vessel identity (track_id).
+        ``ais_trajectory`` carries the AIS pings within ±30s of the tracklet
+        window; timestamps fall back to frame_id / fps_fallback when no AIS
+        anchor exists.
+        """
+        manifests: list[TrackletManifest] = []
+        for seq_id in self.SEQUENCE_IDS:
+            annotations = self._parse_annotations(seq_id)
+            ais_pings = self._parse_ais(seq_id)
+            for track_id in sorted(annotations):
+                anns = annotations[track_id]
+                frame_ids = [a["frame_id"] for a in anns]
+                frame_paths = self._frames_for_track(seq_id, track_id, frame_ids)
+                if not frame_paths:
+                    continue
+                rel_min = frame_ids[0] / self.fps_fallback
+                rel_max = frame_ids[-1] / self.fps_fallback
+                anchor = self._ais_anchor(ais_pings)
+                timestamp_start = self._ts_iso(anchor, rel_min)
+                timestamp_end = self._ts_iso(anchor, rel_max)
+                traj = self._match_ais_window(ais_pings, anchor, rel_min, rel_max)
+                manifests.append(
+                    TrackletManifest(
+                        tracklet_id=f"fvessel_{seq_id}_{track_id}",
+                        vessel_id=track_id,
+                        camera_id=seq_id,
+                        split=self._split_for_seq(seq_id),
+                        frame_paths=frame_paths,
+                        timestamp_start=timestamp_start,
+                        timestamp_end=timestamp_end,
+                        fps=self.fps_fallback,
+                        source_dataset="fvessel",
+                        vessel_type=(anns[0]["vessel_class"] or None),
+                        ais_trajectory=traj,
+                    )
+                )
+        for m in manifests:
+            m.validate()
+        return manifests
+
+    def run(self) -> Path:
+        """build_manifest(), save JSONL, print count, return the output path."""
+        manifests = self.build_manifest()
+        self.manifest_out.parent.mkdir(parents=True, exist_ok=True)
+        save_manifests(str(self.manifest_out), manifests)
+        print(f"FVessel: built {len(manifests)} tracklets -> {self.manifest_out}")
+        return self.manifest_out
+
+    # ------------------------------------------------------------- internal
+    @staticmethod
+    def _split_for_seq(seq_id: str) -> str:
+        """train for seq_001-018, query for seq_019-022, gallery for seq_023-026."""
+        m = re.search(r"(\d+)$", seq_id)
+        idx = int(m.group(1)) if m else 0
+        if idx <= 18:
+            return "train"
+        if idx <= 22:
+            return "query"
+        return "gallery"
+
+    def _parse_ais(self, seq_id: str) -> list[dict[str, Any]]:
+        """Read ``ais/<seq_id>.csv`` (columns timestamp,mmsi,lat,lon,sog,cog).
+
+        Returns list of dicts keyed timestamp (datetime), mmsi (str), lat,
+        lon, sog, cog (float); ``[]`` when the file is absent.
+        """
+        path = self.raw_root / self.ais_dir / f"{seq_id}.csv"
+        if not path.is_file():
+            return []
+        pings: list[dict[str, Any]] = []
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                ts = _parse_ais_timestamp(row.get("timestamp") or row.get("Timestamp"))
+                if ts is None:
+                    continue
+                try:
+                    pings.append(
+                        {
+                            "timestamp": ts,
+                            "mmsi": str(row.get("mmsi") or row.get("MMSI")).strip(),
+                            "lat": float(row.get("lat") or row.get("Lat")),
+                            "lon": float(row.get("lon") or row.get("Lon")),
+                            "sog": float(row.get("sog") or row.get("Speed")),
+                            "cog": float(row.get("cog") or row.get("Course")),
+                        }
+                    )
+                except (TypeError, ValueError):
+                    continue
+        return pings
+
+    def _parse_annotations(self, seq_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Read ``annotations/<seq_id>.csv`` or ``.json``.
+
+        Expected columns/keys: frame_id (int), track_id (str), x1,y1,x2,y2
+        (bbox), vessel_class (str|None). Returns track_id -> list of frame
+        annotation dicts, each sorted by frame_id.
+        """
+        csv_path = self.raw_root / self.anno_dir / f"{seq_id}.csv"
+        json_path = self.raw_root / self.anno_dir / f"{seq_id}.json"
+        rows: list[dict[str, Any]] = []
+        if csv_path.is_file():
+            with open(csv_path, newline="") as f:
+                for raw in csv.DictReader(f):
+                    ann = _normalize_anno_row(raw)
+                    if ann is not None:
+                        rows.append(ann)
+        elif json_path.is_file():
+            with open(json_path) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                for raw in data.values():
+                    if isinstance(raw, list):
+                        rows.extend(raw)
+            elif isinstance(data, list):
+                rows.extend(data)
+            rows = [
+                ann
+                for raw in rows
+                if (ann := _normalize_anno_row(raw if isinstance(raw, dict) else {})) is not None
+            ]
+        by_track: dict[str, list[dict[str, Any]]] = {}
+        for ann in rows:
+            by_track.setdefault(ann["track_id"], []).append(ann)
+        for track_id in by_track:
+            by_track[track_id].sort(key=lambda a: a["frame_id"])
+        return by_track
+
+    def _frames_for_track(
+        self, seq_id: str, track_id: str, frame_ids: list[int]
+    ) -> list[str]:
+        """Sorted absolute paths to existing frame images for ``frame_ids``.
+
+        Looks in ``raw_root/videos/<seq_id>/`` for files named
+        ``<frame_id:06d><frame_ext>``; missing frames are skipped.
+        """
+        seq_dir = self.raw_root / "videos" / seq_id
+        paths: list[str] = []
+        for fid in sorted(frame_ids):
+            p = seq_dir / f"{fid:06d}{self.frame_ext}"
+            if p.is_file():
+                paths.append(str(p.resolve()))
+        return paths
+
+    @staticmethod
+    def _ais_anchor(pings: list[dict[str, Any]]) -> datetime | None:
+        """Earliest AIS ping timestamp, assumed aligned to video frame 0."""
+        stamps = [p["timestamp"] for p in pings if p.get("timestamp") is not None]
+        return min(stamps) if stamps else None
+
+    @staticmethod
+    def _ts_iso(anchor: datetime | None, rel_s: float) -> str:
+        if anchor is not None:
+            return (anchor + timedelta(seconds=rel_s)).isoformat()
+        return datetime.fromtimestamp(rel_s, tz=timezone.utc).isoformat()
+
+    def _match_ais_window(
+        self,
+        pings: list[dict[str, Any]],
+        anchor: datetime | None,
+        rel_min: float,
+        rel_max: float,
+    ) -> list[dict[str, Any]] | None:
+        """AIS pings within ±30s of the tracklet window (JSON-serializable)."""
+        if anchor is None:
+            return None
+        lo = anchor + timedelta(seconds=rel_min - 30.0)
+        hi = anchor + timedelta(seconds=rel_max + 30.0)
+        matched = [
+            {
+                "timestamp": p["timestamp"].isoformat(),
+                "mmsi": p["mmsi"],
+                "lat": p["lat"],
+                "lon": p["lon"],
+                "sog": p["sog"],
+                "cog": p["cog"],
+            }
+            for p in pings
+            if lo <= p["timestamp"] <= hi
+        ]
+        return matched or None

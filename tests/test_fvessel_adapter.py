@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from data.adapters import adapter_registry, get_adapter
-from data.adapters.fvessel import FvesselAdapter, FvesselSequenceMeta
+from src.data.adapters import adapter_registry, get_adapter
+from src.data.adapters.fvessel import FvesselAdapter, FvesselSequenceMeta
 
 VIDEO_NAME = "2022_05_10_19_21_05_19_31_10_b.mp4"
 CAMERA_PARA = "114.32583 30.60139 7 -1 20 55 30.94 2391.26 2446.89 1305.04 855.214"

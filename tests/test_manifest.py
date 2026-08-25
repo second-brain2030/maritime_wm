@@ -1,6 +1,6 @@
 import pytest
 
-from data.manifest import TrackletManifest, load_manifests, save_manifests
+from src.data.manifest import TrackletManifest, load_manifests, save_manifests
 
 
 def make(**kw):

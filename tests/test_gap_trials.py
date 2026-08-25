@@ -1,13 +1,13 @@
 import pytest
 
-from data.gap_trials import (
+from src.data.gap_trials import (
     GapProtocolConfig,
     GapTrial,
     GapTrialManifest,
     assign_gap_bin,
     build_gap_trials,
 )
-from data.manifest import TrackletManifest
+from src.data.manifest import TrackletManifest
 
 
 def make_tracklet(tid, vid, cam, split, n_frames=10, t_start=None, t_end=None):

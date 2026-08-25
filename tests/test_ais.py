@@ -1,6 +1,6 @@
 import pytest
 
-from data.ais import AisPing, AisTrajectory, AisTrajectoryManifest, split_pings_by_window
+from src.data.ais import AisPing, AisTrajectory, AisTrajectoryManifest, split_pings_by_window
 
 
 def make_ping(utc_ms, mmsi="100000000", lon=114.3, lat=30.6):

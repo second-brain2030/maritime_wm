@@ -1,6 +1,6 @@
 import pytest
 
-from data.sampling import MODES, sample_frame_indices
+from src.data.sampling import MODES, sample_frame_indices
 
 
 def test_uniform_length_and_order():

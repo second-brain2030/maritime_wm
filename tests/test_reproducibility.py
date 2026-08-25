@@ -1,6 +1,6 @@
 import random
 
-from utils.reproducibility import content_addressed_key, seed_everything
+from src.utils.reproducibility import content_addressed_key, seed_everything
 
 
 def test_key_stable_and_order_insensitive():

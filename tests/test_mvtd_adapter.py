@@ -1,7 +1,7 @@
 import pytest
 
-from data.adapters import adapter_registry, get_adapter
-from data.adapters.mvtd import MvtdAdapter
+from src.data.adapters import adapter_registry, get_adapter
+from src.data.adapters.mvtd import MvtdAdapter
 
 GROUNDTRUTH = ["10,20,110,120", "0,0,0,0", "30,40,130,140"]
 ABSENCE = ["0", "1", "0"]

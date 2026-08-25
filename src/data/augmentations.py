@@ -6,7 +6,7 @@ are DIAGNOSTICS, not the primary hard test (spec section 8.1).
 """
 from __future__ import annotations
 
-from utils.registry import Registry
+from src.utils.registry import Registry
 
 # key: stressor name -> factory(severity: str, seed: int) -> transform
 stress_transform_registry = Registry("stress_transforms")

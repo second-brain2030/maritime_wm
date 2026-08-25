@@ -1,7 +1,7 @@
 import pytest
 
-from data.manifest import TrackletManifest
-from data.splits import validate_identity_disjointness
+from src.data.manifest import TrackletManifest
+from src.data.splits import validate_identity_disjointness
 
 
 def m(tid, vid, split):

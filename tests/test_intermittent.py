@@ -1,6 +1,6 @@
 import pytest
 
-from data.intermittent import block_patch_mask, find_gaps, intermittent_observation_mask
+from src.data.intermittent import block_patch_mask, find_gaps, intermittent_observation_mask
 
 
 def test_mask_length_and_determinism():

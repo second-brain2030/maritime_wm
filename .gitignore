@@ -16,3 +16,5 @@ outputs/*
 .idea/
 .vscode/
 .worktrees/
+models/vjepa2/checkpoints/
+models/*/checkpoints/

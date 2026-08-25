@@ -1,6 +1,6 @@
 import pytest
 
-from utils.registry import Registry
+from src.utils.registry import Registry
 
 
 def test_register_create():

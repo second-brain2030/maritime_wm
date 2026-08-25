@@ -1,9 +1,10 @@
 import pytest
+import torch
 
-from models import encoder_registry
-from models.baselines import AisUpperBound, KalmanDeadReckoning, TrackerReidBaseline
-from models.baselines.ais_upper_bound import AisUpperBound as _AUB
-from data.gap_trials import GapTrial
+from src.models import encoder_registry
+from src.models.baselines import AisUpperBound, KalmanDeadReckon, TrackerReidBaseline
+from src.models.baselines.ais_upper_bound import AisUpperBound as _AUB
+from src.data.gap_trials import GapTrial
 
 
 def test_encoder_registry_has_arms():
@@ -18,9 +19,18 @@ def test_encoder_registry_has_arms():
 
 
 def test_encoder_registry_create():
-    enc = encoder_registry.create("cnn_reid", backbone="resnet50", pretrained=False)
-    assert enc.name == "cnn_reid_resnet50"
+    enc = encoder_registry.create("cnn_reid", backbone="osnet_x1_0", pretrained=False)
+    assert enc.name == "cnn_reid"
     assert enc.embedding_dim == 2048
+
+
+def test_cnn_encode_returns_features():
+    enc = encoder_registry.create("cnn_reid", pretrained=False)
+    frames = enc.preprocess(torch.rand(1, 2, 3, 64, 80))
+    feats = enc.encode_observed(frames)
+    assert feats.shape == (1, 2, 2048)
+    assert torch.allclose(feats.norm(dim=-1), torch.ones(1, 2), atol=1e-5)
+    assert enc.encode_predicted(frames) is None
 
 
 def test_predictor_arm_is_not_silent():
@@ -46,6 +56,6 @@ def test_ais_upper_bound_requires_ais():
 
 
 def test_baselines_instantiate():
-    assert KalmanDeadReckoning().name == "kalman_deadreckon"
+    assert KalmanDeadReckon().name == "kalman_deadreckon"
     assert TrackerReidBaseline().name == "tracker_reid"
     assert AisUpperBound().name == "ais_upper_bound"

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from models.kinematic import (
+from src.models.kinematic import (
     ConstantVelocityKalman,
     predict_across_gap,
     propose_search_window,

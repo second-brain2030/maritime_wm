@@ -1,7 +1,7 @@
 """Dataset adapters (spec section 4: map upstream folder names via config)."""
 from __future__ import annotations
 
-from utils.registry import Registry
+from src.utils.registry import Registry
 
 from .base import DatasetAdapter
 from .viv_reid import ViVReidAdapter

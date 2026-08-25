@@ -9,7 +9,7 @@ from typing import Mapping
 
 from torch import Tensor
 
-from data.gap_trials import GapTrial
+from src.data.gap_trials import GapTrial
 from .base import BaseGapBaseline
 
 

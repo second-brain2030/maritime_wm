@@ -2,7 +2,7 @@ from PIL import Image
 
 import pytest
 
-from utils.media import (
+from src.utils.media import (
     is_video_frame_path,
     load_frame,
     split_video_frame_path,

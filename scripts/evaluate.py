@@ -10,6 +10,7 @@ baseline runs so arms compare on the same trials.
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from data.ais import AisTrajectoryManifest, split_pings_by_window
 from data.manifest import load_manifests
 from evaluation.blackout_harness import BlackoutConfig, BlackoutEpisodeManifest
-from evaluation.degradation import degradation_slope
+from evaluation.degradation import compute_degradation
 from evaluation.features import embed_frames, tracklet_visible_bboxes
 from evaluation.reacquisition_eval import (
     ais_drift_m,
@@ -46,7 +47,8 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = load_config("experiments", args.config_name)
-    manifests = load_manifests(cfg["data"]["manifest_path"])
+    data_cfg = cfg["data"]
+    manifests = load_manifests(data_cfg["manifest_path"])
     index = {(m.camera_id, m.vessel_id): m for m in manifests}
 
     episodes = BlackoutEpisodeManifest.load(
@@ -57,6 +59,8 @@ def main() -> None:
 
     model_cfg = dict(cfg["model"])
     arm = model_cfg.pop("arm")
+    for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim"):
+        model_cfg.pop(key, None)
     encoder = encoder_registry.create(arm, **model_cfg)
     probe_path = args.probe or f"outputs/probes/{arm}/probe.pt"
     head = build_head(ProbeArtifacts.load(probe_path))
@@ -74,13 +78,14 @@ def main() -> None:
         bcfg = BlackoutConfig.from_dict(json.loads(sidecar.read_text()))
 
     results = []
+    max_query_frames = int(data_cfg.get("frames_per_tracklet", 16))
     for ep in episodes:
         target = index.get((ep.sequence_id, ep.vessel_id))
         if target is None:
             continue
         q_frames = [
             fi for fi, _ in tracklet_visible_bboxes(target) if fi < ep.blackout_start_frame
-        ][-16:]
+        ][-max_query_frames:]
         q_paths = [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in q_frames]
         if not q_paths:
             continue
@@ -132,13 +137,27 @@ def main() -> None:
         results.append(episode_result(ep, ranked, drift))
 
     summary = summarize_reacquisition(results)
-    acc = summary["top1_by_duration"]
-    centers = {k: float(k[:-1]) for k in acc}
-    slope = degradation_slope(acc, bin_centers=centers) if len(acc) >= 2 else None
+    by_bin: dict[str, list[bool]] = {}
+    pools: list[int] = []
+    for r in results:
+        key = f"{int(r['duration_s'])}s"
+        by_bin.setdefault(key, []).append(bool(r["rank_of_correct"] == 1))
+        pools.append(int(r["n_candidates"]))
+    deg = None
+    if by_bin:
+        pool_size = max(1, int(round(sum(pools) / len(pools))))
+        deg = compute_degradation(by_bin, pool_size=pool_size, arm_name=arm)
+    slope = deg.slope if deg is not None else None
 
     out = Path(args.output or f"outputs/eval/{arm}/reacquisition.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"arm": arm, "summary": summary, "degradation_slope": slope, "n_episodes": len(results)}
+    payload = {
+        "arm": arm,
+        "summary": summary,
+        "degradation": asdict(deg) if deg is not None else None,
+        "degradation_slope": slope,
+        "n_episodes": len(results),
+    }
     out.write_text(json.dumps(payload, indent=2, default=str))
     with open(out.with_suffix(".results.jsonl"), "w") as f:
         for r in results:

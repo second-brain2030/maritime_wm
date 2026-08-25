@@ -12,6 +12,7 @@ compare on identical trials.
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +22,7 @@ from data.ais import AisTrajectoryManifest, split_pings_by_window
 from data.manifest import load_manifests
 from evaluation.baselines import ais_rank, appearance_rank, deadreckon_rank
 from evaluation.blackout_harness import BlackoutConfig, BlackoutEpisodeManifest
-from evaluation.degradation import degradation_slope
+from evaluation.degradation import compute_degradation
 from evaluation.reacquisition_eval import episode_result
 from evaluation.tracking_metrics import summarize_reacquisition
 from models import encoder_registry
@@ -64,6 +65,8 @@ def main() -> None:
         model_cfg = dict(cfg["model"])
         arm = args.appearance_arm
         model_cfg.pop("arm", None)
+        for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim"):
+            model_cfg.pop(key, None)
         encoder = encoder_registry.create(arm, **model_cfg)
 
     results = []
@@ -98,13 +101,27 @@ def main() -> None:
         results.append(episode_result(ep, ranked, drift))
 
     summary = summarize_reacquisition(results)
-    acc = summary["top1_by_duration"]
-    centers = {k: float(k[:-1]) for k in acc}
-    slope = degradation_slope(acc, bin_centers=centers) if len(acc) >= 2 else None
+    by_bin: dict[str, list[bool]] = {}
+    pools: list[int] = []
+    for r in results:
+        key = f"{int(r['duration_s'])}s"
+        by_bin.setdefault(key, []).append(bool(r["rank_of_correct"] == 1))
+        pools.append(int(r["n_candidates"]))
+    deg = None
+    if by_bin:
+        pool_size = max(1, int(round(sum(pools) / len(pools))))
+        deg = compute_degradation(by_bin, pool_size=pool_size, arm_name=args.baseline)
+    slope = deg.slope if deg is not None else None
 
     out = Path(args.output or f"outputs/baselines/{args.baseline}/reacquisition.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"baseline": args.baseline, "summary": summary, "degradation_slope": slope, "n_episodes": len(results)}
+    payload = {
+        "baseline": args.baseline,
+        "summary": summary,
+        "degradation": asdict(deg) if deg is not None else None,
+        "degradation_slope": slope,
+        "n_episodes": len(results),
+    }
     out.write_text(json.dumps(payload, indent=2, default=str))
     with open(out.with_suffix(".results.jsonl"), "w") as f:
         for r in results:

@@ -86,12 +86,16 @@ python scripts/build_blackout_episodes.py --config-name fvessel_blackout
 
 # 3. extract frozen-backbone features (content-addressed cache)
 python scripts/extract_features.py --config-name fvessel_cnn
+python scripts/extract_features.py --config-name fvessel_vjepa   # needs submodule + weights
 
 # 4. train the shared Re-ID probe on cached features
 python scripts/train_probe.py --config-name fvessel_cnn
+python scripts/train_probe.py --config-name fvessel_vjepa
 
-# 5. evaluate the probe arm on blackout episodes (re-acquisition + drift)
+# 5. evaluate each probe arm on blackout episodes (re-acquisition + drift)
 python scripts/evaluate.py --config-name fvessel_cnn \
+    --episodes data/gap_trials/fvessel_blackout.jsonl
+python scripts/evaluate.py --config-name fvessel_vjepa \
     --episodes data/gap_trials/fvessel_blackout.jsonl
 
 # 6. external baselines on the SAME episodes (identical result format)
@@ -99,8 +103,8 @@ python scripts/run_baselines.py --baseline kalman_deadreckon --config-name fvess
 python scripts/run_baselines.py --baseline tracker_reid --config-name fvessel_cnn
 python scripts/run_baselines.py --baseline ais_upper_bound --config-name fvessel_cnn
 
-# 7. aggregate runs into a comparison report
-python scripts/aggregate_results.py --runs outputs/eval/cnn_reid outputs/baselines/*
+# 7. aggregate runs into a per-duration comparison table
+python scripts/aggregate_results.py
 ```
 
 ## How to add a new encoder adapter

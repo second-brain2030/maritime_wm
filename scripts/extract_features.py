@@ -34,10 +34,9 @@ def main() -> None:
     cfg = load_config("experiments", args.config_name)
     model_cfg = dict(cfg["model"])
     arm = model_cfg.pop("arm")
-    # metadata keys consumed by the pipeline, not passed to the adapter
-    model_cfg.pop("embedding_dim", None)
-    model_cfg.pop("input_size", None)
-    model_cfg.pop("token_dim", None)
+    # pipeline metadata keys consumed by the harness, not passed to the adapter
+    for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim"):
+        model_cfg.pop(key, None)
     encoder = encoder_registry.create(arm, **model_cfg)
     print(f"arm={arm} encoder={encoder.name} dim={encoder.embedding_dim}")
 

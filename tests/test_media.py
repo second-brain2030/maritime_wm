@@ -23,6 +23,7 @@ def test_load_image_frame(tmp_path):
     assert img.size == (8, 6)
 
 
-def test_load_video_frame_requires_fps():
-    with pytest.raises(ValueError):
-        load_frame("v.mp4#0", fps=None)
+def test_load_video_frame_missing_file():
+    # cv2 path: missing video raises OSError (no fps required anymore)
+    with pytest.raises(OSError):
+        load_frame("does_not_exist.mp4#0")

@@ -71,7 +71,8 @@ def test_build_manifests(tmp_path):
     assert m0.frame_timestamps_utc_ms == [START_UTC_MS + i * 1000 for i in range(4)]
     assert m0.fps == 25.0
     assert m0.video_path.endswith(".mp4")
-    assert m0.split == "gallery"  # single sequence -> gallery under 0.6/0.2/0.2
+    assert m0.split in ("train", "query", "gallery")  # identity-disjoint vessel split
+    assert m0.split == ms[1].split or m0.vessel_id != ms[1].vessel_id  # vessel-consistent
     assert m0.source_dataset == "fvessel"
     assert m0.camera_id == "Video-01"
     assert m0.frame_paths[0] == f"{m0.video_path}#0"

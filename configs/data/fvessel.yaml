@@ -2,7 +2,7 @@
 # FVessel dataset config (brief P1; spec §4). Public dataset:
 # github.com/gy65896/FVessel, HF: gy65896/FVessel (26 video+AIS sequences).
 dataset: fvessel
-root: data/raw/fvessel
+root: data/raw
 manifest_path: data/manifests/fvessel.jsonl
 aux_manifest_paths:
   ais: data/manifests/fvessel_ais.jsonl

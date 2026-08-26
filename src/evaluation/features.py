@@ -39,9 +39,16 @@ def embed_frames(
     paths = list(paths)[:max_frames]
     if not paths:
         raise ValueError("embed_frames requires at least one frame path")
-    frames = torch.stack(
-        [ToTensor()(load_frame(p, fps=fps).resize((load_resolution, load_resolution))) for p in paths]
-    )
+    tensors = []
+    for p in paths:
+        try:
+            tensors.append(ToTensor()(load_frame(p, fps=fps).resize((load_resolution, load_resolution))))
+        except (OSError, ValueError):
+            # frame beyond the recorded video / missing media: skip it
+            continue
+    if not tensors:
+        raise ValueError(f"no decodable frames among {len(paths)} paths (first: {paths[0]})")
+    frames = torch.stack(tensors)
     frames = frames.unsqueeze(0).to(device)  # [1, T, 3, H, W]
     with torch.no_grad():
         tokens = encoder.encode_observed(frames, None)  # [1, T, D]

@@ -43,9 +43,17 @@ from ..manifest import TrackletManifest, save_manifests
 from ..splits import validate_identity_disjointness
 from .base import DatasetAdapter
 
-_VIDEO_NAME_RE = re.compile(
-    r"^(?P<start>\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})_"
-    r"(?P<end>\d{2}_\d{2}_\d{2})_(?P<loc>[a-z]+)\."
+# FVessel V1.0 ships two video-naming conventions:
+#   A: 2022_05_10_19_21_05_19_31_10_b.mp4   (start = full datetime, end = time)
+#   B: 2022-06-04_11.59.22-12.19.12_b.mp4  or  Video_2022-11-10_17.42.23-..._r.mp4
+_REV1 = re.compile(
+    r"^(?P<start>\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})[_-](?P<end>\d{2}_\d{2}_\d{2})_(?P<loc>[a-z]+)\.",
+    re.I,
+)
+_REV2 = re.compile(
+    r"^(?:Video_)?(?P<date>\d{4}-\d{2}-\d{2})_(?P<start>\d{2}\.\d{2}\.\d{2})"
+    r"-(?P<end>\d{2}\.\d{2}\.\d{2})_(?P<loc>[a-z]+)\.",
+    re.I,
 )
 
 
@@ -59,6 +67,17 @@ def _video_bounds(start: str, end: str) -> tuple[int, int]:
     start_dt = datetime.strptime(start, "%Y_%m_%d_%H_%M_%S").replace(tzinfo=timezone.utc)
     end_t = datetime.strptime(end, "%H_%M_%S").time()
     end_dt = datetime.combine(start_dt.date(), end_t, tzinfo=timezone.utc)
+    return int(start_dt.timestamp() * 1000), int(end_dt.timestamp() * 1000)
+
+
+def _video_bounds_v2(date: str, start: str, end: str) -> tuple[int, int]:
+    """date + start/end times in HH.MM.SS form (convention B)."""
+    start_dt = datetime.strptime(f"{date} {start}", "%Y-%m-%d %H.%M.%S").replace(
+        tzinfo=timezone.utc
+    )
+    end_dt = datetime.strptime(f"{date} {end}", "%Y-%m-%d %H.%M.%S").replace(
+        tzinfo=timezone.utc
+    )
     return int(start_dt.timestamp() * 1000), int(end_dt.timestamp() * 1000)
 
 
@@ -130,7 +149,6 @@ class FvesselAdapter(DatasetAdapter):
         sequence_ids = sorted(p.name for p in seq_root.iterdir() if p.is_dir())
         if not sequence_ids:
             raise ValueError(f"no sequence directories under {seq_root}")
-        split_map = self._assign_splits(sequence_ids)
 
         manifests: list[TrackletManifest] = []
         ais_trajectories: list[AisTrajectory] = []
@@ -145,8 +163,14 @@ class FvesselAdapter(DatasetAdapter):
             by_track = self._regroup_by_track(track_rows)
             for track_id in sorted(by_track):
                 manifests.append(
-                    self._build_tracklet(seq_id, meta, track_id, by_track[track_id], id_to_mmsi, split_map)
+                    self._build_tracklet(seq_id, meta, track_id, by_track[track_id], id_to_mmsi)
                 )
+
+        # identity-disjoint splits: the same vessel (MMSI) may appear in
+        # several sequences, so assign splits per VESSEL, not per sequence
+        split_map = self._assign_vessel_splits(manifests)
+        for m in manifests:
+            m.split = split_map[m.vessel_id]
 
         for m in manifests:
             m.validate()
@@ -155,21 +179,21 @@ class FvesselAdapter(DatasetAdapter):
         return manifests
 
     # ------------------------------------------------------------- internal
-    def _assign_splits(self, sequence_ids: list[str]) -> dict[str, str]:
+    def _assign_vessel_splits(self, manifests: list[TrackletManifest]) -> dict[str, str]:
         rng = random.Random(self.split_seed)
-        ordered = sorted(sequence_ids)
-        rng.shuffle(ordered)
-        n = len(ordered)
+        vessels = sorted({m.vessel_id for m in manifests})
+        rng.shuffle(vessels)
+        n = len(vessels)
         train_n = int(n * self.split_ratios.get("train", 0.6))
         query_n = int(n * self.split_ratios.get("query", 0.2))
         split_map: dict[str, str] = {}
-        for i, sid in enumerate(ordered):
+        for i, vid in enumerate(vessels):
             if i < train_n:
-                split_map[sid] = "train"
+                split_map[vid] = "train"
             elif i < train_n + query_n:
-                split_map[sid] = "query"
+                split_map[vid] = "query"
             else:
-                split_map[sid] = "gallery"
+                split_map[vid] = "gallery"
         return split_map
 
     def _parse_meta(self, seq_dir: Path, seq_id: str) -> FvesselSequenceMeta:
@@ -179,18 +203,26 @@ class FvesselAdapter(DatasetAdapter):
         )
         if video_path is None:
             raise FileNotFoundError(f"no video file found in {seq_dir}")
-        m = _VIDEO_NAME_RE.match(video_path.name)
-        if m is None:
-            raise ValueError(
-                f"cannot parse start/end/location from video name {video_path.name!r}"
+        m = _REV1.match(video_path.name)
+        if m is not None:
+            start_utc_ms, end_utc_ms = _video_bounds(m.group("start"), m.group("end"))
+            loc = m.group("loc")
+        else:
+            m2 = _REV2.match(video_path.name)
+            if m2 is None:
+                raise ValueError(
+                    f"cannot parse start/end/location from video name {video_path.name!r}"
+                )
+            start_utc_ms, end_utc_ms = _video_bounds_v2(
+                m2.group("date"), m2.group("start"), m2.group("end")
             )
-        start_utc_ms, end_utc_ms = _video_bounds(m.group("start"), m.group("end"))
+            loc = m2.group("loc")
         return FvesselSequenceMeta(
             sequence_id=seq_id,
             video_path=str(video_path.resolve()),
             start_utc_ms=start_utc_ms,
             end_utc_ms=end_utc_ms,
-            location_type=m.group("loc"),
+            location_type=loc,
             **self._parse_camera_para(seq_dir / self.camera_para_file),
             fps=self.fps,
         )
@@ -199,7 +231,10 @@ class FvesselAdapter(DatasetAdapter):
         if not path.is_file():
             return {}
         with open(path) as f:
-            tokens = f.read().split()
+            raw = f.read()
+        # the real files are list literals e.g. "[114.32, 30.60, 7, -4, ...]";
+        # extract all numbers regardless of separator (space, comma, brackets)
+        tokens = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", raw)
         if len(tokens) < 11:
             raise ValueError(f"{path}: expected 11 camera parameters, got {len(tokens)}")
         return {
@@ -335,7 +370,6 @@ class FvesselAdapter(DatasetAdapter):
         track_id: int,
         observations: list[tuple[int, list[float]]],
         id_to_mmsi: dict[int, str | None],
-        split_map: dict[str, str],
     ) -> TrackletManifest:
         frame_indices = [round(second * self.fps) for second, _ in observations]
         bboxes = [bb for _, bb in observations]
@@ -347,7 +381,7 @@ class FvesselAdapter(DatasetAdapter):
             tracklet_id=f"fv_{seq_id}_t{track_id}",
             vessel_id=vessel_id,
             camera_id=seq_id,
-            split=split_map[seq_id],
+            split="train",  # provisional; overwritten by vessel-based assignment
             frame_paths=frame_paths,
             fps=self.fps,
             video_path=meta.video_path,

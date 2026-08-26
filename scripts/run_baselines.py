@@ -123,8 +123,11 @@ def main() -> None:
             ]
             if not q_paths or not near:
                 continue
-            q_emb = embed_frames(encoder, None, q_paths, fps=target.fps)
-            t_emb = embed_frames(encoder, None, [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in near], fps=target.fps)
+            try:
+                q_emb = embed_frames(encoder, None, q_paths, fps=target.fps)
+                t_emb = embed_frames(encoder, None, [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in near], fps=target.fps)
+            except (OSError, ValueError):
+                continue
             qn = q_emb / (float(np.linalg.norm(q_emb)) + 1e-9)
             tn = t_emb / (float(np.linalg.norm(t_emb)) + 1e-9)
             key = f"{int(ep.blackout_duration_s)}s"

@@ -93,7 +93,10 @@ def main() -> None:
         q_paths = [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in q_frames]
         if not q_paths:
             continue
-        q_emb = embed_frames(encoder, head, q_paths, fps=target.fps, pool_tokens=pool_tokens)
+        try:
+            q_emb = embed_frames(encoder, head, q_paths, fps=target.fps, pool_tokens=pool_tokens)
+        except (OSError, ValueError):
+            continue  # query window undecodable: skip the episode
 
         cand_embs = {}
         for cid in ep.candidate_vessel_ids:
@@ -107,12 +110,17 @@ def main() -> None:
             if not near:
                 fi, _ = min(tracklet_visible_bboxes(ct), key=lambda vb: abs(vb[0] - ep.reappearance_frame))
                 near = [fi]
-            cand_embs[cid] = embed_frames(
-                encoder, head,
-                [p for fi, p in zip(ct.frame_indices or [], ct.frame_paths) if fi in near],
-                fps=ct.fps,
-                pool_tokens=pool_tokens,
-            )
+            try:
+                cand_embs[cid] = embed_frames(
+                    encoder, head,
+                    [p for fi, p in zip(ct.frame_indices or [], ct.frame_paths) if fi in near],
+                    fps=ct.fps,
+                    pool_tokens=pool_tokens,
+                )
+            except (OSError, ValueError):
+                # undecodable candidate (GT beyond recorded video): exclude
+                # it from the pool rather than crashing the episode
+                continue
         ranked = rank_by_cosine(q_emb, cand_embs)
 
         # temporal feature stability: cosine between the vessel's pre-gap

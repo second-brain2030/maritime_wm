@@ -77,7 +77,10 @@ def appearance_rank(
     q_paths = [
         p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in q_frames
     ]
-    q_emb = embed_frames(encoder, None, q_paths, fps=fps)
+    try:
+        q_emb = embed_frames(encoder, None, q_paths, fps=fps)
+    except (OSError, ValueError):
+        return [], None  # query undecodable: no ranking possible
 
     cand_embs: dict[str, np.ndarray] = {}
     for cid, ct in candidates.items():
@@ -88,7 +91,10 @@ def appearance_rank(
         if not near:
             fi, _ = min(visible, key=lambda vb: abs(vb[0] - episode.reappearance_frame))
             near = [fi]
-        cand_embs[cid] = embed_frames(encoder, None, [p for fi, p in zip(ct.frame_indices or [], ct.frame_paths) if fi in near], fps=fps)
+        try:
+            cand_embs[cid] = embed_frames(encoder, None, [p for fi, p in zip(ct.frame_indices or [], ct.frame_paths) if fi in near], fps=fps)
+        except (OSError, ValueError):
+            continue  # undecodable candidate: exclude from the pool
     return rank_by_cosine(q_emb, cand_embs), None
 
 

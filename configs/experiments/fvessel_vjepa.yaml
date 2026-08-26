@@ -12,3 +12,7 @@ model:
   arm: vjepa_encoder
   frozen: true
   token_dim: 768
+  pool_tokens: 64
+training:
+  epochs: 8
+  batch_size: 4

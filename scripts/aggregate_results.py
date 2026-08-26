@@ -24,12 +24,54 @@ def _load_results(path: Path) -> dict | None:
         return None
 
 
+def _load_episode_results(path: Path) -> list[dict]:
+    if not path.is_file():
+        return []
+    rows = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def _slice_summary(sliced: list[dict], arm_name: str) -> tuple[dict, float | None, int]:
+    """Recompute per-duration Top-1 and degradation slope for a sliced set."""
+    from evaluation.degradation import compute_degradation
+    from evaluation.tracking_metrics import reacquisition_topk
+
+    by_dur: dict[float, list[dict]] = {}
+    for r in sliced:
+        by_dur.setdefault(float(r["duration_s"]), []).append(r)
+    per_duration: dict[str, float] = {}
+    by_bin: dict[str, list[bool]] = {}
+    pools: list[int] = []
+    for d in sorted(by_dur):
+        rs = by_dur[d]
+        ranks = [r.get("rank_of_correct") for r in rs]
+        per_duration[f"{int(d)}s"] = reacquisition_topk(ranks, 1)
+        by_bin[f"{int(d)}s"] = [bool(r.get("rank_of_correct") == 1) for r in rs]
+        pools.extend(r.get("n_candidates", 0) for r in rs)
+    slope = None
+    if by_bin:
+        pool_size = max(1, int(round(sum(pools) / len(pools))))
+        if pool_size >= 2:
+            slope = compute_degradation(by_bin, pool_size=pool_size, arm_name=arm_name).slope
+    return per_duration, slope, len(sliced)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runs", nargs="+", default=None,
                     help="outputs/eval/<arm> or outputs/baselines/<name> dirs "
                          "(default: discover outputs/eval/* and outputs/baselines/*)")
     ap.add_argument("--output", default="outputs/pilot/comparison.json")
+    ap.add_argument("--min-pool", type=int, default=None,
+                    help="slice: keep only episodes with n_candidates >= N "
+                         "(recomputed from per-episode results.jsonl)")
     args = ap.parse_args()
 
     dirs: list[Path] = []
@@ -46,18 +88,31 @@ def main() -> None:
         if res is None:
             continue
         name = res.get("arm") or res.get("baseline") or d.name
-        per_duration = {
-            f"{int(r['duration_s'])}s": r["top1"]
-            for r in res["summary"].get("per_duration", [])
-        }
+        if args.min_pool is not None:
+            # recompute per-duration Top-1 / slope from the sliced episode set
+            ep_rows = _load_episode_results(d / "reacquisition.results.jsonl")
+            sliced = [r for r in ep_rows if r.get("n_candidates", 0) >= args.min_pool]
+            per_duration, slope, n_ep = _slice_summary(sliced, name)
+            dataset = res.get("dataset", "unknown")
+            if not sliced:
+                continue
+        else:
+            per_duration = {
+                f"{int(r['duration_s'])}s": r["top1"]
+                for r in res["summary"].get("per_duration", [])
+            }
+            slope = res.get("degradation_slope")
+            n_ep = res.get("n_episodes")
+            dataset = res.get("dataset", "unknown")
         rows.append({
             "arm": name,
-            "dataset": res.get("dataset", "unknown"),
+            "dataset": dataset,
             "top1_by_duration": per_duration,
             "self_cosine_by_duration": res.get("self_cosine_by_duration"),
-            "degradation_slope": res.get("degradation_slope"),
-            "n_episodes": res.get("n_episodes"),
+            "degradation_slope": slope,
+            "n_episodes": n_ep,
             "source": str(d),
+            "slice": f"pool>={args.min_pool}" if args.min_pool is not None else "all",
         })
 
     rows.sort(key=lambda r: (r["dataset"], r["arm"]))

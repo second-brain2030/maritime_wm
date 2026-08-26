@@ -72,7 +72,29 @@ def main() -> None:
     ap.add_argument("--min-pool", type=int, default=None,
                     help="slice: keep only episodes with n_candidates >= N "
                          "(recomputed from per-episode results.jsonl)")
+    ap.add_argument("--maneuver", choices=("straight", "maneuver", "unknown"), default=None,
+                    help="slice: keep only episodes labeled with this "
+                         "maneuver-during-gap value (labels file by dataset)")
+    ap.add_argument("--maneuver-labels", default=None,
+                    help="episode_id -> maneuver JSONL (default: "
+                         "data/gap_trials/<stem>_maneuver.jsonl next to --episodes)")
     args = ap.parse_args()
+
+    maneuver_labels: dict[str, str] | None = None
+    if args.maneuver is not None:
+        labels_path = Path(args.maneuver_labels or "data/gap_trials/fvessel_blackout_maneuver.jsonl")
+        if not labels_path.is_file():
+            raise FileNotFoundError(f"maneuver labels not found: {labels_path} "
+                                    "(run scripts/label_maneuvers.py first)")
+        maneuver_labels = {}
+        for line in labels_path.read_text().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    d = json.loads(line)
+                    maneuver_labels[d["episode_id"]] = d["maneuver"]
+                except json.JSONDecodeError:
+                    continue
 
     dirs: list[Path] = []
     if args.runs:
@@ -88,10 +110,17 @@ def main() -> None:
         if res is None:
             continue
         name = res.get("arm") or res.get("baseline") or d.name
-        if args.min_pool is not None:
+        if args.min_pool is not None or args.maneuver is not None:
             # recompute per-duration Top-1 / slope from the sliced episode set
             ep_rows = _load_episode_results(d / "reacquisition.results.jsonl")
-            sliced = [r for r in ep_rows if r.get("n_candidates", 0) >= args.min_pool]
+            sliced = ep_rows
+            if args.min_pool is not None:
+                sliced = [r for r in sliced if r.get("n_candidates", 0) >= args.min_pool]
+            if args.maneuver is not None:
+                sliced = [
+                    r for r in sliced
+                    if maneuver_labels.get(r.get("episode_id")) == args.maneuver
+                ]
             per_duration, slope, n_ep = _slice_summary(sliced, name)
             dataset = res.get("dataset", "unknown")
             if not sliced:

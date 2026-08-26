@@ -13,6 +13,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -59,12 +61,14 @@ def main() -> None:
 
     model_cfg = dict(cfg["model"])
     arm = model_cfg.pop("arm")
-    for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim"):
+    for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim", "pool_tokens"):
         model_cfg.pop(key, None)
     encoder = encoder_registry.create(arm, **model_cfg)
     probe_path = args.probe or f"outputs/probes/{arm}/probe.pt"
-    head = build_head(ProbeArtifacts.load(probe_path))
-    print(f"arm={arm} probe={probe_path} episodes={len(episodes)}")
+    probe_artifacts = ProbeArtifacts.load(probe_path)
+    head = build_head(probe_artifacts)
+    pool_tokens = probe_artifacts.config.get("pool_tokens")
+    print(f"arm={arm} probe={probe_path} episodes={len(episodes)} pool_tokens={pool_tokens}")
 
     ais_by = {}
     ais_path = args.ais_manifest or cfg.get("ais_manifest_path")
@@ -89,7 +93,7 @@ def main() -> None:
         q_paths = [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in q_frames]
         if not q_paths:
             continue
-        q_emb = embed_frames(encoder, head, q_paths, fps=target.fps)
+        q_emb = embed_frames(encoder, head, q_paths, fps=target.fps, pool_tokens=pool_tokens)
 
         cand_embs = {}
         for cid in ep.candidate_vessel_ids:
@@ -107,8 +111,17 @@ def main() -> None:
                 encoder, head,
                 [p for fi, p in zip(ct.frame_indices or [], ct.frame_paths) if fi in near],
                 fps=ct.fps,
+                pool_tokens=pool_tokens,
             )
         ranked = rank_by_cosine(q_emb, cand_embs)
+
+        # temporal feature stability: cosine between the vessel's pre-gap
+        # embedding and its own post-gap (reappearance) embedding
+        self_cos = None
+        if ep.vessel_id in cand_embs:
+            qn = q_emb / (float(np.linalg.norm(q_emb)) + 1e-9)
+            tn = cand_embs[ep.vessel_id] / (float(np.linalg.norm(cand_embs[ep.vessel_id])) + 1e-9)
+            self_cos = float(qn @ tn)
 
         drift = None
         if ep.gt_lonlat_at_reappearance is not None and ep.vessel_id in ais_by:
@@ -134,9 +147,19 @@ def main() -> None:
                 predict_bbox_center(obs, ep.blackout_duration_s),
                 ep.gt_bbox_at_reappearance,
             )
-        results.append(episode_result(ep, ranked, drift))
+        r = episode_result(ep, ranked, drift)
+        r["self_cosine"] = self_cos
+        results.append(r)
 
     summary = summarize_reacquisition(results)
+    self_cos_by_duration: dict[str, float] = {}
+    for r in results:
+        if r.get("self_cosine") is None:
+            continue
+        key = f"{int(r['duration_s'])}s"
+        vals = self_cos_by_duration.setdefault(key, [])
+        vals.append(r["self_cosine"])
+    self_cos_by_duration = {k: float(np.mean(v)) for k, v in self_cos_by_duration.items()}
     by_bin: dict[str, list[bool]] = {}
     pools: list[int] = []
     for r in results:
@@ -156,7 +179,9 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "arm": arm,
+        "dataset": data_cfg.get("dataset", "unknown"),
         "summary": summary,
+        "self_cosine_by_duration": self_cos_by_duration,
         "degradation": asdict(deg) if deg is not None else None,
         "degradation_slope": slope,
         "n_episodes": len(results),

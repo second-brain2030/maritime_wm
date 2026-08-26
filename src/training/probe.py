@@ -18,6 +18,7 @@ from models.common_head import SharedReIDHead
 from training.callbacks import EarlyStopping
 from training.losses import BatchHardTripletLoss, IDCrossEntropyLoss
 from utils.reproducibility import seed_everything
+from utils.tokens import pool_tokens_to
 
 
 @dataclass
@@ -98,11 +99,15 @@ def train_probe(
     seed: int = 42,
     max_tracklets: int | None = None,
     device: str = "cpu",
+    pool_tokens: int | None = None,
 ) -> ProbeArtifacts:
     """Train the shared head on cached features of TRAIN-split tracklets.
 
     Features are keyed by ``tracklet_id`` in the cache (spec section 13).
     Only training identities are used for the classifier (spec section 12).
+    ``pool_tokens`` bounds long token sequences (V-JEPA) by chunk-mean pooling
+    to a fixed token count before the head, keeping transformer pooling RAM-
+    and CPU-bounded on large clips.
     """
     seed_everything(seed)
     feats = load_cached_features(features_dir)
@@ -143,6 +148,9 @@ def train_probe(
             )
             tokens = tokens.to(device)
             mask = mask.to(device)
+            if pool_tokens is not None:
+                tokens = pool_tokens_to(tokens, pool_tokens)
+                mask = mask[:, : tokens.shape[1]]
             out = head(tokens, mask)
             loss = (
                 id_ce_weight * ce_loss(out["logits"], labels[idxs].to(device))
@@ -169,5 +177,6 @@ def train_probe(
             "seed": seed,
             "train_tracklets": len(train_manifests),
             "num_classes": len(class_map),
+            "pool_tokens": pool_tokens,
         },
     )

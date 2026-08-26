@@ -15,6 +15,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -23,6 +25,7 @@ from data.manifest import load_manifests
 from evaluation.baselines import ais_rank, appearance_rank, deadreckon_rank
 from evaluation.blackout_harness import BlackoutConfig, BlackoutEpisodeManifest
 from evaluation.degradation import compute_degradation
+from evaluation.features import embed_frames, tracklet_visible_bboxes
 from evaluation.reacquisition_eval import episode_result
 from evaluation.tracking_metrics import summarize_reacquisition
 from models import encoder_registry
@@ -65,7 +68,7 @@ def main() -> None:
         model_cfg = dict(cfg["model"])
         arm = args.appearance_arm
         model_cfg.pop("arm", None)
-        for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim"):
+        for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim", "pool_tokens"):
             model_cfg.pop(key, None)
         encoder = encoder_registry.create(arm, **model_cfg)
 
@@ -98,9 +101,35 @@ def main() -> None:
                 if cid in ais_by
             }
             ranked, drift = ais_rank(ep, visible, cand_pings)
-        results.append(episode_result(ep, ranked, drift))
+        r = episode_result(ep, ranked, drift)
+        r["self_cosine"] = None  # kinematic/AIS baselines have no appearance
+        results.append(r)
 
     summary = summarize_reacquisition(results)
+    self_cos_by_duration: dict[str, float] = {}
+    if args.baseline == "tracker_reid" and encoder is not None:
+        # recompute appearance self-cosine per episode (stable-feature signal)
+        for ep in episodes:
+            target = index.get((ep.sequence_id, ep.vessel_id))
+            if target is None:
+                continue
+            q_frames = [
+                fi for fi, _ in tracklet_visible_bboxes(target) if fi < ep.blackout_start_frame
+            ][-16:]
+            q_paths = [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in q_frames]
+            near = [
+                fi for fi, _ in tracklet_visible_bboxes(target)
+                if abs(fi - ep.reappearance_frame) <= int(0.5 * (target.fps or 25))
+            ]
+            if not q_paths or not near:
+                continue
+            q_emb = embed_frames(encoder, None, q_paths, fps=target.fps)
+            t_emb = embed_frames(encoder, None, [p for fi, p in zip(target.frame_indices or [], target.frame_paths) if fi in near], fps=target.fps)
+            qn = q_emb / (float(np.linalg.norm(q_emb)) + 1e-9)
+            tn = t_emb / (float(np.linalg.norm(t_emb)) + 1e-9)
+            key = f"{int(ep.blackout_duration_s)}s"
+            self_cos_by_duration.setdefault(key, []).append(float(qn @ tn))
+        self_cos_by_duration = {k: float(np.mean(v)) for k, v in self_cos_by_duration.items()}
     by_bin: dict[str, list[bool]] = {}
     pools: list[int] = []
     for r in results:
@@ -120,7 +149,9 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "baseline": args.baseline,
+        "dataset": cfg["data"].get("dataset", "unknown"),
         "summary": summary,
+        "self_cosine_by_duration": self_cos_by_duration,
         "degradation": asdict(deg) if deg is not None else None,
         "degradation_slope": slope,
         "n_episodes": len(results),

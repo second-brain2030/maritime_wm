@@ -15,6 +15,7 @@ from torchvision.transforms import ToTensor
 
 from data.manifest import TrackletManifest
 from utils.media import load_frame
+from utils.tokens import pool_tokens_to
 
 
 def embed_frames(
@@ -25,13 +26,15 @@ def embed_frames(
     max_frames: int = 16,
     device: str = "cpu",
     load_resolution: int = 256,
+    pool_tokens: int | None = None,
 ) -> np.ndarray:
     """Mean embedding of up to ``max_frames`` frames as a [D] numpy vector.
 
     With ``head``: pooled probe embedding; without: mean-pooled raw encoder
     tokens (used by the appearance baseline, Arm G). Frames are resized to
     ``load_resolution`` at load time to bound memory on large maritime
-    imagery.
+    imagery; ``pool_tokens`` chunk-mean-pools long token sequences
+    (V-JEPA) before the head, keeping transformer pooling RAM-bounded.
     """
     paths = list(paths)[:max_frames]
     if not paths:
@@ -43,6 +46,8 @@ def embed_frames(
     with torch.no_grad():
         tokens = encoder.encode_observed(frames, None)  # [1, T, D]
         if head is not None:
+            if pool_tokens is not None:
+                tokens = pool_tokens_to(tokens, pool_tokens)
             emb = head(tokens.to(device), None)["embedding"][0]
         else:
             emb = tokens[0].mean(dim=0)

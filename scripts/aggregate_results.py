@@ -52,29 +52,35 @@ def main() -> None:
         }
         rows.append({
             "arm": name,
+            "dataset": res.get("dataset", "unknown"),
             "top1_by_duration": per_duration,
+            "self_cosine_by_duration": res.get("self_cosine_by_duration"),
             "degradation_slope": res.get("degradation_slope"),
             "n_episodes": res.get("n_episodes"),
             "source": str(d),
         })
 
-    rows.sort(key=lambda r: r["arm"])
+    rows.sort(key=lambda r: (r["dataset"], r["arm"]))
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"arms": rows}, indent=2, default=str))
 
-    durations = sorted(
-        {int(d[:-1]) for r in rows for d in r["top1_by_duration"]},
-        key=lambda d: d,
-    )
-    header = f"{'arm':<22} " + " ".join(f"{d}s".rjust(6) for d in durations) + "  slope"
-    print(header)
-    for r in rows:
-        t = r["top1_by_duration"]
-        cells = " ".join(f"{t.get(f'{d}s', float('nan')):>6.2f}" for d in durations)
-        slope = f"{r['degradation_slope']:.3f}" if r["degradation_slope"] is not None else "  n/a"
-        print(f"{r['arm']:<22} {cells}  {slope}")
-    print(f"\n-> {out} ({len(rows)} arms)")
+    datasets = sorted({r["dataset"] for r in rows})
+    for dataset in datasets:
+        ds_rows = [r for r in rows if r["dataset"] == dataset]
+        durations = sorted(
+            {int(d[:-1]) for r in ds_rows for d in r["top1_by_duration"]},
+            key=lambda d: d,
+        )
+        print(f"\n=== dataset: {dataset} ===")
+        header = f"{'arm':<22} " + " ".join(f"{d}s".rjust(6) for d in durations) + "  slope"
+        print(header)
+        for r in ds_rows:
+            t = r["top1_by_duration"]
+            cells = " ".join(f"{t.get(f'{d}s', float('nan')):>6.2f}" for d in durations)
+            slope = f"{r['degradation_slope']:.3f}" if r["degradation_slope"] is not None else "  n/a"
+            print(f"{r['arm']:<22} {cells}  {slope}")
+    print(f"\n-> {out} ({len(rows)} arms, {len(datasets)} datasets)")
 
 
 if __name__ == "__main__":

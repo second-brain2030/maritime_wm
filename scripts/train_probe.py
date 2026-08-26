@@ -20,6 +20,8 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=None)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--token-dim", type=int, default=None)
+    ap.add_argument("--batch-size", type=int, default=None)
+    ap.add_argument("--pool-tokens", type=int, default=None)
     ap.add_argument("--max-tracklets", type=int, default=None)
     args = ap.parse_args()
 
@@ -39,12 +41,13 @@ def main() -> None:
         manifests=manifests,
         token_dim=token_dim,
         epochs=args.epochs or int(cfg["training"]["epochs"]),
-        batch_size=int(cfg["training"]["batch_size"]),
+        batch_size=args.batch_size or int(cfg["training"]["batch_size"]),
         lr=float(cfg["training"]["lr"]),
         id_ce_weight=float(cfg["training"]["losses"]["id_ce_weight"]),
         triplet_weight=float(cfg["training"]["losses"]["triplet_weight"]),
         seed=args.seed or int(cfg["experiment"]["seed"]),
         max_tracklets=args.max_tracklets,
+        pool_tokens=args.pool_tokens or cfg.get("model", {}).get("pool_tokens"),
     )
     artifacts.save(out)
     print(f"saved probe -> {out}")

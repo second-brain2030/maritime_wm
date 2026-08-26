@@ -35,7 +35,7 @@ def main() -> None:
     model_cfg = dict(cfg["model"])
     arm = model_cfg.pop("arm")
     # pipeline metadata keys consumed by the harness, not passed to the adapter
-    for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim"):
+    for key in ("frozen_backbone", "temporal_head", "embedding_dim", "input_size", "token_dim", "pool_tokens"):
         model_cfg.pop(key, None)
     encoder = encoder_registry.create(arm, **model_cfg)
     print(f"arm={arm} encoder={encoder.name} dim={encoder.embedding_dim}")

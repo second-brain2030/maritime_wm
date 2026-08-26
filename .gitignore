@@ -18,3 +18,4 @@ outputs/*
 .worktrees/
 models/vjepa2/checkpoints/
 models/*/checkpoints/
+data/raw/

@@ -70,9 +70,16 @@ def main() -> None:
             len(m.frame_paths), frames_per, mode=mode, seed=cfg["experiment"].get("seed", 42)
         )
         try:
+            # resize at load time (encoders resize to 224/384 anyway); keeps
+            # memory bounded on large maritime frames (1920x1088 clips would
+            # otherwise cost ~400 MB in RAM per tracklet)
+            load_res = int(data_cfg.get("load_resolution", 256))
             frames = torch.stack(
-                [ToTensor()(load_frame(m.frame_paths[i], fps=m.fps)) for i in idx]
-            )  # [T, 3, H, W] in [0, 1]
+                [
+                    ToTensor()(load_frame(m.frame_paths[i], fps=m.fps).resize((load_res, load_res)))
+                    for i in idx
+                ]
+            )  # [T, 3, load_res, load_res] in [0, 1]
         except Exception as e:  # missing media file etc.
             print(f"[warn] skipping {m.tracklet_id}: {e}")
             skipped += 1

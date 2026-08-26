@@ -24,16 +24,21 @@ def embed_frames(
     fps: float | None,
     max_frames: int = 16,
     device: str = "cpu",
+    load_resolution: int = 256,
 ) -> np.ndarray:
     """Mean embedding of up to ``max_frames`` frames as a [D] numpy vector.
 
     With ``head``: pooled probe embedding; without: mean-pooled raw encoder
-    tokens (used by the appearance baseline, Arm G).
+    tokens (used by the appearance baseline, Arm G). Frames are resized to
+    ``load_resolution`` at load time to bound memory on large maritime
+    imagery.
     """
     paths = list(paths)[:max_frames]
     if not paths:
         raise ValueError("embed_frames requires at least one frame path")
-    frames = torch.stack([ToTensor()(load_frame(p, fps=fps)) for p in paths])
+    frames = torch.stack(
+        [ToTensor()(load_frame(p, fps=fps).resize((load_resolution, load_resolution))) for p in paths]
+    )
     frames = frames.unsqueeze(0).to(device)  # [1, T, 3, H, W]
     with torch.no_grad():
         tokens = encoder.encode_observed(frames, None)  # [1, T, D]

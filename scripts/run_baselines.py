@@ -108,9 +108,12 @@ def main() -> None:
         by_bin.setdefault(key, []).append(bool(r["rank_of_correct"] == 1))
         pools.append(int(r["n_candidates"]))
     deg = None
+    # chance normalization requires pool_size >= 2 (single-object tracking,
+    # e.g. MVTD, has pool=1 and thus no meaningful re-acquisition accuracy)
     if by_bin:
         pool_size = max(1, int(round(sum(pools) / len(pools))))
-        deg = compute_degradation(by_bin, pool_size=pool_size, arm_name=args.baseline)
+        if pool_size >= 2:
+            deg = compute_degradation(by_bin, pool_size=pool_size, arm_name=args.baseline)
     slope = deg.slope if deg is not None else None
 
     out = Path(args.output or f"outputs/baselines/{args.baseline}/reacquisition.json")

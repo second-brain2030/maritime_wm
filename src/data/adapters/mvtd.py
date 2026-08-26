@@ -40,6 +40,7 @@ class MvtdAdapter(DatasetAdapter):
     # ------------------------------------------------------------------ API
     def build_manifests(self) -> list[TrackletManifest]:
         manifests: list[TrackletManifest] = []
+        skipped: list[tuple[str, str, str]] = []
         for split in self.split_dirs:
             split_root = self.root / split
             if not split_root.is_dir():
@@ -47,9 +48,22 @@ class MvtdAdapter(DatasetAdapter):
             for seq_dir in sorted(split_root.iterdir()):
                 if not seq_dir.is_dir():
                     continue
-                manifests.append(self._build_tracklet(seq_dir, split))
+                try:
+                    manifests.append(self._build_tracklet(seq_dir, split))
+                except (FileNotFoundError, ValueError) as e:
+                    # tolerate incomplete sequences (e.g. a download in
+                    # progress); fail loudly only if nothing valid remains
+                    skipped.append((split, seq_dir.name, str(e)))
+        if skipped:
+            print(
+                f"[mvtd] skipped {len(skipped)} incomplete sequences: "
+                + ", ".join(f"{s}/{n}" for s, n, _ in skipped[:8])
+            )
         if not manifests:
-            raise ValueError(f"no MVTD sequences under {self.root}")
+            raise ValueError(
+                f"no complete MVTD sequences under {self.root} "
+                f"({len(skipped)} incomplete; check the download)"
+            )
         for m in manifests:
             m.validate()
         return manifests
@@ -105,11 +119,14 @@ class MvtdAdapter(DatasetAdapter):
                     boxes.append(None)
                     continue
                 vals = [float(p) for p in parts[:4]]
-                if all(v == 0 for v in vals):
+                if all(v <= 0 for v in vals):
+                    # absent marker: 0,0,0,0 or -1,-1,-1,-1
                     boxes.append(None)
                 else:
                     x1, y1, x2, y2 = vals
-                    boxes.append([x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)])
+                    boxes.append(
+                        [max(0.0, x1), max(0.0, y1), max(0.0, x2 - x1), max(0.0, y2 - y1)]
+                    )
         if len(boxes) < n_frames:  # pad missing trailing annotations with None
             boxes += [None] * (n_frames - len(boxes))
         return boxes[:n_frames]

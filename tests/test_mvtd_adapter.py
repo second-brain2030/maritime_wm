@@ -60,13 +60,22 @@ def test_missing_split_raises(tmp_path):
         MvtdAdapter({"root": str(root)}).build_manifests()
 
 
-def test_missing_groundtruth_raises(tmp_path):
+def test_incomplete_sequences_skipped(tmp_path):
+    # a sequence missing groundtruth is skipped (tolerating partial
+    # downloads); build fails loudly only when NOTHING valid remains
     root = tmp_path / "mvtd"
-    seq = root / "train" / "3-USV"
-    seq.mkdir(parents=True)
-    (seq / "frame00000001.jpg").touch()
-    with pytest.raises(FileNotFoundError):
-        MvtdAdapter({"root": str(root)}).build_manifests()
+    bad = root / "train" / "3-USV"
+    bad.mkdir(parents=True)
+    (bad / "frame00000001.jpg").touch()  # missing groundtruth.txt
+    with pytest.raises(ValueError, match="no complete MVTD sequences"):
+        MvtdAdapter({"root": str(root), "layout": {"split_dirs": ["train"]}}).build_manifests()
+
+    good = root / "train" / "5-Boat"
+    good.mkdir(parents=True)
+    (good / "frame00000001.jpg").touch()
+    (good / "groundtruth.txt").write_text("1,2,101,102\n")
+    ms = MvtdAdapter({"root": str(root), "layout": {"split_dirs": ["train"]}}).build_manifests()
+    assert [m.vessel_id for m in ms] == ["5-Boat"]  # bad sequence skipped
 
 
 def test_missing_labels_default_false(tmp_path):
@@ -78,3 +87,15 @@ def test_missing_labels_default_false(tmp_path):
     m = MvtdAdapter({"root": str(root), "layout": {"split_dirs": ["train"]}}).build_manifests()[0]
     assert m.occlusion_level == "none"
     assert m.frame_bboxes == [[1.0, 2.0, 100.0, 100.0]]
+
+
+def test_negative_boxes_handled(tmp_path):
+    root = tmp_path / "mvtd"
+    seq = root / "train" / "6-USV"
+    seq.mkdir(parents=True)
+    for i in range(1, 4):
+        (seq / f"frame{i:08d}.jpg").touch()
+    # -1,-1,-1,-1 = absent marker; -5,10,50,60 = clamped to valid box
+    (seq / "groundtruth.txt").write_text("-1,-1,-1,-1\n-5,10,50,60\n20,30,80,90\n")
+    m = MvtdAdapter({"root": str(root), "layout": {"split_dirs": ["train"]}}).build_manifests()[0]
+    assert m.frame_bboxes == [None, [0.0, 10.0, 55.0, 50.0], [20.0, 30.0, 60.0, 60.0]]

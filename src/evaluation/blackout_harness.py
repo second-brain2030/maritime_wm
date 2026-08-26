@@ -103,10 +103,11 @@ def build_blackout_episodes(
 ) -> list[BlackoutEpisode]:
     """Build deterministic blackout episodes from tracklet manifests.
 
-    Requires per-frame ``frame_indices`` + ``fps`` + ``frame_timestamps_utc_ms``
-    (FVessel adapter output). AIS trajectories are matched by ``vessel_id``;
-    pings inside the blackout window are withheld and their positions become
-    the hidden ground truth for localization drift.
+    Requires per-frame ``frame_indices`` + ``fps``; ``frame_timestamps_utc_ms``
+    is optional (datasets without timestamps such as MVTD use frame/fps
+    bookkeeping and have no AIS withholding). AIS trajectories are matched by
+    ``vessel_id``; pings inside the blackout window are withheld and their
+    positions become the hidden ground truth for localization drift.
     """
     config = config or BlackoutConfig()
     config.validate()
@@ -120,8 +121,9 @@ def build_blackout_episodes(
     for tracklet in tracklets:
         if tracklet.frame_indices is None or tracklet.fps is None:
             continue
-        if tracklet.frame_timestamps_utc_ms is None:
-            continue
+        # timestamps optional: datasets without them (e.g. MVTD) use
+        # frame-index/fps bookkeeping and simply have no AIS withholding
+        has_ts = tracklet.frame_timestamps_utc_ms is not None
         visible = sorted(tracklet.frame_indices)
         lookup = _visible_frame_map(tracklet)
         fps = tracklet.fps
@@ -148,7 +150,11 @@ def build_blackout_episodes(
             windows = windows[: config.episodes_per_duration_per_tracklet]
             for b, r in windows:
                 query_idx = [v for v in visible if v < b]
-                start_utc = tracklet.frame_timestamps_utc_ms[lookup[b]]
+                start_utc = (
+                    tracklet.frame_timestamps_utc_ms[lookup[b]]
+                    if has_ts
+                    else int(b / fps * 1000)
+                )
                 end_utc = start_utc + int(duration_s * 1000)
                 withheld_count = 0
                 gt_lonlat: list[float] | None = None

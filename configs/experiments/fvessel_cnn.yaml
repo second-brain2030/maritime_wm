@@ -11,7 +11,7 @@ episodes_path: data/gap_trials/fvessel_blackout.jsonl
 model:
   arm: cnn_reid
   backbone: resnet50
-  pretrained: false
+  pretrained: true
   frozen_backbone: true
   temporal_head: attention
   embedding_dim: 2048
